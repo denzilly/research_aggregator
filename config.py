@@ -16,6 +16,9 @@ OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-v4-flas
 
 WRITE_SECRET = os.environ.get("WRITE_SECRET", "")
 
+SITE_PASSWORD = os.environ.get("SITE_PASSWORD", "")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+
 INITIAL_BACKFILL_DAYS = int(os.environ.get("INITIAL_BACKFILL_DAYS", "30"))
 
 # Re-fetch a small overlap into the previous run's window to catch papers

@@ -86,7 +86,13 @@ def run() -> int:
         print("Another ingestion run is already in progress — skipping.")
         return 0
 
-    conn = db.get_connection()
+    try:
+        conn = db.get_connection()
+    except Exception as exc:
+        print(f"Ingestion failed: {exc}", file=sys.stderr)
+        _release_lock()
+        return 1
+
     started_at = _now_iso()
     cur = conn.execute(
         "INSERT INTO runs (started_at, status) VALUES (?, 'running')", (started_at,)

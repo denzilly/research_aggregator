@@ -29,6 +29,11 @@
         Last run failed: {{ pipeline.error_message }}
       {% endif %}
     </div>
+    {% if site_password_configured %}
+      <form method="post" action="{{ url_for('main.logout') }}">
+        <button type="submit" class="ghost">Sign out</button>
+      </form>
+    {% endif %}
   </header>
 
   <main class="{% block main_class %}{% endblock %}">

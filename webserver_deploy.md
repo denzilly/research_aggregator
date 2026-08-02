@@ -1,41 +1,33 @@
 # Phage Digest — Webserver Deployment Plan
 
-Handoff doc for continuing this project in a Claude Code session running
-*on* the webserver (this was built on a local Windows dev machine, which
-had no access to the server). Read this alongside `project.md` (original
-plan) — this doc covers what's actually been built, decisions made along
-the way that extend beyond the original plan, and the steps left to go
-live.
+Originally a handoff doc for continuing this project in a Claude Code
+session running *on* the webserver (built on a local Windows dev machine,
+which had no access to the server). **Deployment is now done** (2026-08-02)
+— this doc is kept as a record of what was actually built and why, since
+the live setup ended up diverging from the plan below in a few real ways.
+Read alongside `project.md` (original plan).
 
-## Status: what's done
+## Status: live
 
-Built and verified end-to-end against live APIs on the dev machine:
-
+- **URL**: `https://research.btblog.dev` (password-gated — see below).
 - **Ingestion pipeline** (`ingest/`): PubMed (E-utilities) + bioRxiv/medRxiv
   fetch, word-boundary keyword matching, OpenRouter batch scoring/
-  summarization, SQLite storage with FTS5. Verified with real runs
-  (170-paper backfill, incremental runs, concurrent-run lock).
+  summarization, SQLite storage with FTS5.
 - **Web app** (`app/`): digest view, FTS5 search with filters, favorites
   (star toggle), settings (keyword editing + manual "run now" trigger).
-  Styled per the "ScholarStream" design system pulled from the project's
-  Stitch mockups. Verified in-browser against real data.
+  "ScholarStream" design system.
+- **DB**: migrated from the dev machine (177 already-scored papers) rather
+  than re-scoring from scratch — see `data/phage_digest.db`.
+- **Scheduling**: OS-level crontab (`crontab -l` as `bart`), not Hermes —
+  see "Deviation: cron" below.
 - Local git history has the full build story if you want the "why" behind
   anything below — `git log`.
-
-**Not done**: actual deployment (this doc), `WRITE_SECRET` not finalized,
-real keyword list not yet set (still a placeholder), Hermes cron not wired
-up, no Cloudflare Tunnel route yet.
 
 ## Key decisions made since project.md
 
 Worth knowing before touching anything, since some of these extend or
 correct the original plan:
 
-- **Hermes' role is scheduling only.** The cron job should shell-exec the
-  ingestion script directly (`python -m ingest.ingest`), *not* describe
-  ingestion in natural language for Hermes' agent loop to improvise. The
-  script must stay the single source of truth for ingestion logic —
-  deterministic dedupe/scoring, not re-reasoned per run.
 - **LLM calls go direct to OpenRouter**, not through Hermes. Model is
   pinned to `deepseek/deepseek-v4-flash` via `OPENROUTER_MODEL` in
   `.env`. Note: OpenRouter's `response_format: json_object` mode is
@@ -55,28 +47,104 @@ correct the original plan:
   state re-fetches since the last successful run with a 1-day overlap
   (`OVERLAP_DAYS`) to catch late-indexed papers. Dedupe by id makes the
   overlap free.
-- **No real auth** — by design (2-person tool). Write endpoints (favorite
-  toggle, settings save, run-now) are optionally gated by `WRITE_SECRET`:
-  if set in `.env`, requests must include it via `X-Write-Secret` header
-  or `secret` form/query field. The web UI stores it in the browser's
-  localStorage once entered on the Settings page. If `WRITE_SECRET` is
-  left empty, those endpoints stay open to anyone with the URL.
+- **Write endpoints** (favorite toggle, settings save, run-now) are
+  gated by `WRITE_SECRET`: requests must include it via `X-Write-Secret`
+  header or `secret` form/query field. The web UI stores it in the
+  browser's localStorage once entered on the Settings page.
+- **Whole-site password gate added post-deployment**, on top of (not
+  instead of) `WRITE_SECRET` — see "Deviation: auth" below. This
+  supersedes project.md's "no auth system" non-goal.
 - **`ingest/backfill_scores.py`** is a standalone maintenance script for
   scoring any papers with a null `relevance_score` (e.g. if the OpenRouter
   key was missing/broken during a run). Safe to re-run any time.
-- The dev machine needed `pip_system_certs` in `requirements.txt` to fix
-  an SSL trust-store issue specific to its Windows network. Almost
-  certainly unnecessary on a normal Linux server — try without it first;
-  only keep it if `pip install` / API calls hit SSL verification errors.
+- `pip_system_certs` was dropped from `requirements.txt` — it was a
+  Windows-network-specific SSL fix, unnecessary on Linux/Docker.
+- **Fixed a lock-leak bug in `ingest/ingest.py`** during deployment
+  verification: `db.get_connection()` was called *before* the
+  `try/finally` that releases `.ingest.lock`, so any exception at that
+  line (e.g. a bad `DATABASE_PATH`) left a permanent stale lock. Now
+  wrapped so the lock always releases even if the connection itself
+  fails.
 
-## Deployment steps
+## Deviation: Docker instead of native venv/systemd
 
-Fill in the `<TODO>` placeholders with this server's actual paths/setup.
+The original plan (steps below, kept for reference) assumed a bare
+`.venv` + systemd + a local `cloudflared` `config.yml`. The actual server
+runs a shared Docker-based reverse-proxy stack (`~/projects/infra`: Caddy
++ cloudflared, joined by an external `web` network — see that project's
+`README.md`/`SERVICES.md`), and `research_aggregator` didn't fit that
+model as a bare venv. So instead:
+
+- `Dockerfile` (python:3.12-slim, gunicorn) and `docker-compose.yml`
+  (joins the external `web` network, mounts `./data`) were added to the
+  repo.
+- `docker compose up -d` replaces the systemd unit.
+- Caddy block added in `~/projects/infra/caddy/Caddyfile`:
+  `http://research.btblog.dev { reverse_proxy phage-digest:8000 }`.
+- Cloudflare Tunnel Public Hostname route added in the dashboard:
+  `research.btblog.dev` → `http://caddy:80` (same pattern as `btblog.dev`
+  itself).
+- **`DATABASE_PATH` must be set explicitly** to `/app/data/phage_digest.db`
+  in `.env` — a present-but-empty value is NOT the same as unset, since
+  `config.py`'s default only applies when the key is absent from the
+  environment. This bit us once during deployment (`unable to open
+  database file`).
+- Row added to `~/projects/infra/SERVICES.md`.
+
+## Deviation: cron runs via OS crontab, not Hermes
+
+The original plan had Hermes shell-exec the ingestion command directly
+("Hermes' role is scheduling only — deterministic script, not
+LLM-improvised"). That intent still holds, but the mechanism changed:
+Hermes' gateway runs in its own Docker container (`network_mode: host`,
+only `~/.hermes` mounted — no filesystem access to this project), and its
+no-agent cron scripts are sandboxed to files inside `~/.hermes/scripts/`.
+It can't reach `docker compose run` here without mounting
+`/var/run/docker.sock` into the Hermes container, which was deliberately
+declined (that's effectively root-equivalent host access for that
+container — too much blast radius for this).
+
+Instead, the `bart` user's OS crontab runs it directly:
+
+```
+15 6 * * * cd /home/bart/projects/research_aggregator && /usr/bin/docker compose run --rm phage-digest python -m ingest.ingest >> /home/bart/projects/research_aggregator/data/ingest-cron.log 2>&1
+```
+
+Still fully deterministic/script-driven (the original goal), just
+scheduled by cron instead of Hermes. Tradeoff: no Telegram/Discord alert
+on run/failure the way a Hermes-managed job would give for free — the
+`runs` table and the web UI's header status line are the source of truth
+for pipeline health instead. `data/ingest-cron.log` has raw output if
+something needs debugging.
+
+## Deviation: whole-site password gate
+
+Added after initial deployment, superseding project.md's "no auth
+system" non-goal. Two new env vars:
+
+- `SITE_PASSWORD` — if set, every page requires a password before
+  anything renders (`/login`, `/logout`, static assets are exempt).
+  Session cookie lasts 30 days. If left empty, the gate is disabled
+  entirely (matches the existing `WRITE_SECRET` "empty = open" pattern).
+- `SECRET_KEY` — signs the Flask session cookie. Required whenever
+  `SITE_PASSWORD` is set.
+
+This sits *in front of* `WRITE_SECRET`, which still separately gates
+write endpoints — the two are independent. Implementation:
+`app/__init__.py` (`before_request` guard + `site_password_configured`
+context processor), `app/routes.py` (`/login`, `/logout`),
+`app/templates/login.html`.
+
+## Original deployment steps (superseded — kept for reference)
+
+<details>
+<summary>What the plan looked like before the Docker/cron/auth
+deviations above (click to expand)</summary>
 
 ### 1. Get the code onto the server
 
 ```bash
-git clone <TODO: this repo's remote> /path/to/research_aggregator
+git clone <repo> /path/to/research_aggregator
 cd /path/to/research_aggregator
 ```
 
@@ -88,35 +156,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If `pip_system_certs` causes problems on Linux (it's a Windows/macOS-
-oriented fix), just remove that line from `requirements.txt`.
-
 ### 3. Configure secrets
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in:
-- `OPENROUTER_API_KEY` — required for scoring/summarization.
-- `NCBI_API_KEY` — optional, raises PubMed rate limit 3→10 req/s.
-- `WRITE_SECRET` — generate one now, e.g. `openssl rand -hex 32`. Set it
-  before this is reachable from the internet.
-- `DATABASE_PATH` — defaults to `./data/phage_digest.db`, fine to leave.
-
-**Never commit `.env`** — it's gitignored, keep it that way.
-
 ### 4. Database: fresh vs. migrated
 
-Two options:
-
-- **Fresh start**: run `python db.py` to create an empty schema, then let
-  the first ingestion run do its normal 30-day backfill. Simple, but
-  redisks the OpenRouter cost already paid once during dev.
-- **Migrate the dev DB** (recommended): copy the dev machine's
-  `data/phage_digest.db` (170+ already-scored papers) to this server's
-  `data/` directory. It's just a file copy — no export/import needed. Then
-  skip straight to step 6.
+Migrated the dev DB (recommended) rather than fresh-starting, to avoid
+re-paying OpenRouter scoring cost.
 
 ### 5. (If fresh start) Initialize schema
 
@@ -130,85 +179,50 @@ python db.py
 python -m ingest.ingest
 ```
 
-Check it completes with `status: ok` and sensible paper counts. This also
-confirms outbound network access to PubMed/bioRxiv/OpenRouter from the
-server works before wiring up cron.
-
 ### 7. Wire up Hermes cron
 
-Set up a Hermes cron job that shell-execs (not natural-language-describes)
-this exact command on a daily schedule, e.g. early morning:
-
-```bash
-cd /path/to/research_aggregator && .venv/bin/python -m ingest.ingest
-```
-
-Use the venv's python explicitly so it picks up installed dependencies
-regardless of Hermes' own environment. Confirm via Hermes' cron job list
-that it fires and check the `runs` table (or the web UI's header status
-line) the next day to confirm it actually ran.
+Superseded — see "Deviation: cron" above.
 
 ### 8. Run the web app as a persistent service
 
-`python run.py` is the Flask dev server — not for production. Add a
-production WSGI server:
-
-```bash
-pip install gunicorn
-```
-
-Then create a systemd service, e.g. `/etc/systemd/system/phage-digest.service`:
-
-```ini
-[Unit]
-Description=Phage Digest web app
-After=network.target
-
-[Service]
-WorkingDirectory=/path/to/research_aggregator
-ExecStart=/path/to/research_aggregator/.venv/bin/gunicorn -w 2 -b 127.0.0.1:<TODO: pick a free port> run:app
-Restart=on-failure
-EnvironmentFile=/path/to/research_aggregator/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now phage-digest
-sudo systemctl status phage-digest
-```
+Superseded — see "Deviation: Docker" above.
 
 ### 9. Add a Cloudflare Tunnel route
 
-Add an ingress rule to the existing tunnel config (`<TODO: locate the
-existing cloudflared config.yml used for the blog>`) pointing a
-hostname/path to `http://127.0.0.1:<port>`. Keep it on a non-obvious
-path/subdomain per the original plan's trust model. Reload/restart
-cloudflared to pick up the new route.
+Superseded — see "Deviation: Docker" above (same idea, different
+mechanics: Cloudflare dashboard → `http://caddy:80` → Caddy → container).
 
 ### 10. Set the write secret in the browser
 
-Visit the deployed Settings page once, paste the `WRITE_SECRET` value into
-the "Write secret" field, save. Confirm favoriting a paper and saving
-keywords both work through the tunnel.
+Still applies as-is — see verification checklist below.
+
+</details>
 
 ## Verification checklist
 
-- [ ] `python -m ingest.ingest` runs clean manually
-- [ ] Hermes cron job fires on schedule (check next day)
-- [ ] `systemctl status phage-digest` shows active/running
-- [ ] Digest/Search/Settings all load through the Cloudflare Tunnel URL
-- [ ] Favorite toggle and settings save work (write secret entered in browser)
-- [ ] Write endpoints reject requests without the correct secret (curl test without header should 403)
-- [ ] `data/phage_digest.db` is included in whatever backup process this server already uses (it's a single file — periodic copy is enough, no special tooling needed)
+- [x] `python -m ingest.ingest` runs clean manually (via `docker compose
+      run --rm phage-digest python -m ingest.ingest`)
+- [x] Crontab job installed and dry-run tested in a minimal environment
+      (fires daily 06:15 — confirm again after the first real overnight run)
+- [x] `docker compose ps` shows `phage-digest` up
+- [x] Digest/Search/Settings all load through the Cloudflare Tunnel URL
+- [x] Login gate: wrong password rejected, correct password grants a
+      session, logout revokes it
+- [x] Favorite toggle and settings save work (write secret entered in
+      browser)
+- [x] Write endpoints reject requests without the correct secret (403
+      confirmed) and accept it with the correct one (200 confirmed)
+- [ ] `data/phage_digest.db` is included in whatever backup process this
+      server already uses (it's a single file — periodic copy is enough,
+      no special tooling needed) — **still needs confirming**
 
 ## Still open (not blockers, but worth deciding)
 
-- **Real keyword list** — currently a placeholder
+- **Real keyword list** — currently still the placeholder
   (`bacteriophage, phage therapy, phage ecology`). Needs her actual
-  subtopic input, set via the Settings page once live.
+  subtopic input, set via the Settings page.
+- **Backup coverage** — confirm `data/phage_digest.db` is actually swept
+  up by this server's existing backup process.
 - **Retention/pruning** — no policy yet; fine to leave papers accumulating
   indefinitely for now given the volume (project.md notes this is cheap
   at this scale).

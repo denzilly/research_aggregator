@@ -1,8 +1,9 @@
+import secrets
 import subprocess
 import sys
 from functools import wraps
 
-from flask import Blueprint, abort, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
 
 import config
 from app import get_db, queries
@@ -32,6 +33,26 @@ def _pipeline_status(conn):
         "new_papers_count": run["new_papers_count"],
         "error_message": run["error_message"],
     }
+
+
+@bp.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        provided = request.form.get("password", "")
+        if secrets.compare_digest(provided, config.SITE_PASSWORD):
+            session.clear()
+            session["authenticated"] = True
+            session.permanent = True
+            return redirect(request.form.get("next") or url_for("main.digest"))
+        error = "Wrong password."
+    return render_template("login.html", error=error, next=request.args.get("next", ""))
+
+
+@bp.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("main.login"))
 
 
 @bp.route("/")
