@@ -1,0 +1,33 @@
+<article class="paper-card" data-paper-id="{{ paper.id }}">
+  <div class="paper-card-top">
+    <h3 class="paper-title">
+      <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.title }}</a>
+    </h3>
+    <div class="paper-card-actions">
+      {% if paper.relevance_score is not none %}
+        <span class="score-badge">{{ "%.0f"|format(paper.relevance_score) }}/10</span>
+      {% endif %}
+      <button class="star-btn {{ 'favorited' if paper.is_favorite }}" data-favorite-btn aria-label="Toggle favorite">
+        {{ "★" if paper.is_favorite else "☆" }}
+      </button>
+    </div>
+  </div>
+
+  <div class="paper-meta">
+    {{ paper.authors or "Unknown authors" }}
+    {% if paper.published_date %} &middot; {{ paper.published_date }}{% endif %}
+  </div>
+
+  {% set body = paper.summary or paper.abstract %}
+  {% if body %}
+    <p class="paper-abstract">{{ body }}</p>
+  {% endif %}
+
+  <div class="paper-card-footer">
+    <span class="field-badge">{{ paper.source }}</span>
+    {% if paper.url %}
+      <a class="doi-link" href="{{ paper.url }}" target="_blank" rel="noopener">View source</a>
+    {% endif %}
+    <span class="pub-date">Ingested {{ paper.ingested_at[:10] }}</span>
+  </div>
+</article>

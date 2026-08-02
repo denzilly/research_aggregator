@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Settings — ScholarStream{% endblock %}
+{% block content %}
+  <h1 class="page-title">Settings</h1>
+
+  <div class="settings-block">
+    <h2>Keywords</h2>
+    <p class="hint">Comma-separated. Used to build the PubMed query and to keyword-filter bioRxiv/medRxiv preprints.</p>
+    <form method="post" action="{{ url_for('main.save_keywords') }}">
+      <input type="hidden" name="secret" data-write-secret-field>
+      <textarea name="keywords">{{ keywords_raw }}</textarea>
+      <div class="settings-actions">
+        <button type="submit">Save keywords</button>
+        {% if saved %}<span class="flash">Saved.</span>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="settings-block">
+    <h2>Ingestion</h2>
+    {% if pipeline.status == 'never_run' %}
+      <p class="hint">No ingestion runs yet.</p>
+    {% elif pipeline.status == 'running' %}
+      <p class="hint">A run is currently in progress.</p>
+    {% elif pipeline.status == 'ok' %}
+      <p class="hint">Last run finished {{ pipeline.finished_at }} — {{ pipeline.new_papers_count }} new papers.</p>
+    {% elif pipeline.status == 'error' %}
+      <p class="hint">Last run failed at {{ pipeline.finished_at }}: {{ pipeline.error_message }}</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('main.run_now') }}">
+      <input type="hidden" name="secret" data-write-secret-field>
+      <div class="settings-actions">
+        <button type="submit" class="ghost">Run now</button>
+        {% if triggered %}<span class="flash">Started — refresh in a moment to see status.</span>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="settings-block">
+    <h2>Write secret</h2>
+    <p class="hint">
+      {% if write_secret_configured %}
+        A WRITE_SECRET is configured on the server. Enter it here so this browser can save keywords / trigger runs / favorite papers.
+      {% else %}
+        No WRITE_SECRET is configured — write actions are currently open to anyone with the URL. This field only matters once one is set.
+      {% endif %}
+      Stored only in this browser's local storage, never sent anywhere except as a header on write requests.
+    </p>
+    <div class="field-group">
+      <input type="password" id="write-secret-input" placeholder="Write secret">
+      <div class="settings-actions">
+        <button type="button" class="ghost" id="save-write-secret">Save in this browser</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}

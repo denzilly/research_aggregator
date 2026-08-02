@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Digest — ScholarStream{% endblock %}
+{% block content %}
+  <h1 class="page-title">Latest digest</h1>
+  {% if papers %}
+    <div class="paper-list">
+      {% for paper in papers %}
+        {% include "_paper_card.html" %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No papers yet — run ingestion from Settings to get started.</p>
+  {% endif %}
+{% endblock %}

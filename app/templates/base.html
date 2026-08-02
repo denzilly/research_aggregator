@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ScholarStream — Phage Digest{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">Scholar<span>Stream</span></div>
+    <nav class="nav-links">
+      <a href="{{ url_for('main.digest') }}" class="{{ 'active' if request.endpoint == 'main.digest' }}">Digest</a>
+      <a href="{{ url_for('main.search') }}" class="{{ 'active' if request.endpoint == 'main.search' }}">Search</a>
+      <a href="{{ url_for('main.search') }}?favorites=1">Favorites</a>
+      <a href="{{ url_for('main.settings') }}" class="{{ 'active' if request.endpoint == 'main.settings' }}">Settings</a>
+    </nav>
+    <div class="pipeline-status {{ pipeline.status }}">
+      <span class="dot"></span>
+      {% if pipeline.status == 'never_run' %}
+        No ingestion runs yet
+      {% elif pipeline.status == 'running' %}
+        Ingesting now&hellip;
+      {% elif pipeline.status == 'ok' %}
+        Last run: {{ pipeline.finished_at[:16] }} &middot; {{ pipeline.new_papers_count }} new
+      {% elif pipeline.status == 'error' %}
+        Last run failed: {{ pipeline.error_message }}
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="{% block main_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

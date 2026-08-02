@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Search — ScholarStream{% endblock %}
+{% block content %}
+  <h1 class="page-title">{{ "Favorites" if favorites_only and not q else "Search" }}</h1>
+
+  <form class="search-form" method="get" action="{{ url_for('main.search') }}">
+    <div class="field-group">
+      <label for="q">Query</label>
+      <input type="text" id="q" name="q" value="{{ q }}" placeholder="e.g. phage therapy">
+    </div>
+    <div class="field-group">
+      <label for="source">Source</label>
+      <select id="source" name="source">
+        <option value="" {{ "selected" if not source }}>All</option>
+        <option value="pubmed" {{ "selected" if source == "pubmed" }}>PubMed</option>
+        <option value="biorxiv" {{ "selected" if source == "biorxiv" }}>bioRxiv</option>
+        <option value="medrxiv" {{ "selected" if source == "medrxiv" }}>medRxiv</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label for="since">Since</label>
+      <input type="date" id="since" name="since" value="{{ since }}">
+    </div>
+    <div class="field-group">
+      <label for="until">Until</label>
+      <input type="date" id="until" name="until" value="{{ until }}">
+    </div>
+    <div class="checkbox-group">
+      <input type="checkbox" id="favorites" name="favorites" value="1" {{ "checked" if favorites_only }}>
+      <label for="favorites">Favorites only</label>
+    </div>
+    <button type="submit">Search</button>
+  </form>
+
+  {% if papers %}
+    <div class="paper-list">
+      {% for paper in papers %}
+        {% include "_paper_card.html" %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No papers match those filters.</p>
+  {% endif %}
+{% endblock %}

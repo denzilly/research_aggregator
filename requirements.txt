@@ -1,0 +1,9 @@
+flask>=3.0
+requests>=2.31
+python-dotenv>=1.0
+
+# Patches Python's ssl module to trust the OS certificate store (Windows
+# Certificate Manager) in addition to certifi's bundle. Needed on this
+# server's network, which does TLS inspection via a root CA that's trusted
+# system-wide but isn't in certifi's static bundle.
+pip_system_certs>=4.0
