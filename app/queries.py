@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import db
@@ -33,7 +34,7 @@ def get_digest_papers(conn=None):
     ).fetchall()
 
 
-def search_papers(query="", source="", since="", until="", favorites_only=False, conn=None):
+def search_papers(query="", source="", since="", until="", folder_id=None, conn=None):
     conn = conn or db.get_connection()
 
     if query.strip():
@@ -56,24 +57,103 @@ def search_papers(query="", source="", since="", until="", favorites_only=False,
     if until:
         sql += " AND published_date <= ?"
         params.append(until)
-    if favorites_only:
-        sql += " AND is_favorite = 1"
+    if folder_id:
+        sql += " AND papers.id IN (SELECT paper_id FROM paper_folders WHERE folder_id = ?)"
+        params.append(folder_id)
 
     sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
 
     return conn.execute(sql, params).fetchall()
 
 
-def toggle_favorite(paper_id: str, conn=None) -> bool:
-    """Flips is_favorite for a paper, returns the new value."""
+def list_folders(conn=None):
+    """All folders with paper counts. 'Favorites' (if present) sorts first, then alphabetical."""
     conn = conn or db.get_connection()
-    row = conn.execute("SELECT is_favorite FROM papers WHERE id = ?", (paper_id,)).fetchone()
-    if row is None:
+    return conn.execute("""
+        SELECT folders.*, COUNT(paper_folders.paper_id) AS paper_count
+        FROM folders
+        LEFT JOIN paper_folders ON paper_folders.folder_id = folders.id
+        GROUP BY folders.id
+        ORDER BY (folders.name != 'Favorites'), folders.name COLLATE NOCASE
+    """).fetchall()
+
+
+def get_folder(folder_id, conn=None):
+    conn = conn or db.get_connection()
+    return conn.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
+
+
+def create_folder(name: str, conn=None):
+    """Creates a folder and returns the new row (with paper_count=0), or None if the name is taken."""
+    conn = conn or db.get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO folders (name, created_at) VALUES (?, datetime('now'))", (name,)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
         return None
-    new_value = 0 if row["is_favorite"] else 1
-    conn.execute("UPDATE papers SET is_favorite = ? WHERE id = ?", (new_value, paper_id))
+    return conn.execute(
+        "SELECT *, 0 AS paper_count FROM folders WHERE id = ?", (cur.lastrowid,)
+    ).fetchone()
+
+
+def rename_folder(folder_id: int, name: str, conn=None):
+    """Returns True on success, False if the folder doesn't exist, None if the name is taken."""
+    conn = conn or db.get_connection()
+    try:
+        cur = conn.execute("UPDATE folders SET name = ? WHERE id = ?", (name, folder_id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return None
+    return cur.rowcount > 0
+
+
+def delete_folder(folder_id: int, conn=None) -> bool:
+    """Deletes the folder; paper_folders rows cascade, papers themselves are untouched."""
+    conn = conn or db.get_connection()
+    cur = conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
     conn.commit()
-    return bool(new_value)
+    return cur.rowcount > 0
+
+
+def get_folder_ids_for_papers(paper_ids: list[str], conn=None) -> dict[str, list[int]]:
+    """Bulk folder-membership lookup for a page of papers, to avoid N+1 queries per card."""
+    conn = conn or db.get_connection()
+    if not paper_ids:
+        return {}
+    placeholders = ",".join("?" * len(paper_ids))
+    rows = conn.execute(
+        f"SELECT paper_id, folder_id FROM paper_folders WHERE paper_id IN ({placeholders})",
+        paper_ids,
+    ).fetchall()
+    result: dict[str, list[int]] = {}
+    for row in rows:
+        result.setdefault(row["paper_id"], []).append(row["folder_id"])
+    return result
+
+
+def add_paper_to_folder(paper_id: str, folder_id: int, conn=None) -> bool:
+    """Idempotent add. Returns False if paper_id or folder_id don't exist."""
+    conn = conn or db.get_connection()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO paper_folders (paper_id, folder_id, added_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (paper_id, folder_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return False
+    return True
+
+
+def remove_paper_from_folder(paper_id: str, folder_id: int, conn=None) -> None:
+    conn = conn or db.get_connection()
+    conn.execute(
+        "DELETE FROM paper_folders WHERE paper_id = ? AND folder_id = ?", (paper_id, folder_id)
+    )
+    conn.commit()
 
 
 def get_keywords_raw(conn=None) -> str:

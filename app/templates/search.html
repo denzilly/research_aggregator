@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Search — ScholarStream{% endblock %}
 {% block content %}
-  <h1 class="page-title">{{ "Favorites" if favorites_only and not q else "Search" }}</h1>
+  <h1 class="page-title">
+    {{ folder.name if folder and not q else "Search" }}
+    {% if folder %}<a class="clear-folder-link" href="{{ url_for('main.search') }}">Clear folder &#10005;</a>{% endif %}
+  </h1>
 
   <form class="search-form" method="get" action="{{ url_for('main.search') }}">
+    <input type="hidden" name="folder" value="{{ folder.id if folder else '' }}">
     <div class="field-group">
       <label for="q">Query</label>
       <input type="text" id="q" name="q" value="{{ q }}" placeholder="e.g. phage therapy">
@@ -24,10 +28,6 @@
     <div class="field-group">
       <label for="until">Until</label>
       <input type="date" id="until" name="until" value="{{ until }}">
-    </div>
-    <div class="checkbox-group">
-      <input type="checkbox" id="favorites" name="favorites" value="1" {{ "checked" if favorites_only }}>
-      <label for="favorites">Favorites only</label>
     </div>
     <button type="submit">Search</button>
   </form>

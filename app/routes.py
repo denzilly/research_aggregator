@@ -59,7 +59,10 @@ def logout():
 def digest():
     conn = get_db()
     papers = queries.get_digest_papers(conn)
-    return render_template("digest.html", papers=papers, pipeline=_pipeline_status(conn))
+    paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
+    return render_template(
+        "digest.html", papers=papers, paper_folder_ids=paper_folder_ids, pipeline=_pipeline_status(conn)
+    )
 
 
 @bp.route("/search")
@@ -69,11 +72,13 @@ def search():
     source = request.args.get("source", "")
     since = request.args.get("since", "")
     until = request.args.get("until", "")
-    favorites_only = request.args.get("favorites") == "1"
+    folder_id = request.args.get("folder", type=int)
+    folder = queries.get_folder(folder_id, conn) if folder_id else None
 
     papers = queries.search_papers(
-        conn=conn, query=q, source=source, since=since, until=until, favorites_only=favorites_only
+        conn=conn, query=q, source=source, since=since, until=until, folder_id=folder_id
     )
+    paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
     return render_template(
         "search.html",
         papers=papers,
@@ -81,19 +86,63 @@ def search():
         source=source,
         since=since,
         until=until,
-        favorites_only=favorites_only,
+        folder=folder,
+        paper_folder_ids=paper_folder_ids,
         pipeline=_pipeline_status(conn),
     )
 
 
-@bp.route("/papers/<path:paper_id>/favorite", methods=["POST"])
+@bp.route("/folders", methods=["POST"])
 @require_write_secret
-def favorite(paper_id):
+def create_folder():
     conn = get_db()
-    new_value = queries.toggle_favorite(paper_id, conn)
-    if new_value is None:
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or request.form.get("name") or "").strip()
+    if not name:
+        abort(400)
+    folder = queries.create_folder(name, conn)
+    if folder is None:
+        return jsonify({"error": "A folder with that name already exists."}), 409
+    return jsonify(dict(folder)), 201
+
+
+@bp.route("/folders/<int:folder_id>", methods=["PATCH"])
+@require_write_secret
+def rename_folder(folder_id):
+    conn = get_db()
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or request.form.get("name") or "").strip()
+    if not name:
+        abort(400)
+    result = queries.rename_folder(folder_id, name, conn)
+    if result is None:
+        return jsonify({"error": "A folder with that name already exists."}), 409
+    if result is False:
         abort(404)
-    return jsonify({"is_favorite": new_value})
+    return jsonify({"id": folder_id, "name": name})
+
+
+@bp.route("/folders/<int:folder_id>", methods=["DELETE"])
+@require_write_secret
+def delete_folder(folder_id):
+    if not queries.delete_folder(folder_id, get_db()):
+        abort(404)
+    return "", 204
+
+
+@bp.route("/papers/<path:paper_id>/folders/<int:folder_id>", methods=["PUT"])
+@require_write_secret
+def add_paper_to_folder(paper_id, folder_id):
+    if not queries.add_paper_to_folder(paper_id, folder_id, get_db()):
+        abort(404)
+    return jsonify({"paper_id": paper_id, "folder_id": folder_id, "in_folder": True})
+
+
+@bp.route("/papers/<path:paper_id>/folders/<int:folder_id>", methods=["DELETE"])
+@require_write_secret
+def remove_paper_from_folder(paper_id, folder_id):
+    queries.remove_paper_from_folder(paper_id, folder_id, get_db())
+    return jsonify({"paper_id": paper_id, "folder_id": folder_id, "in_folder": False})
 
 
 @bp.route("/settings", methods=["GET"])

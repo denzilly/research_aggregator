@@ -7,9 +7,32 @@
       {% if paper.relevance_score is not none %}
         <span class="score-badge">{{ "%.0f"|format(paper.relevance_score) }}/10</span>
       {% endif %}
-      <button class="star-btn {{ 'favorited' if paper.is_favorite }}" data-favorite-btn aria-label="Toggle favorite">
-        {{ "★" if paper.is_favorite else "☆" }}
-      </button>
+      {% set saved_folder_ids = paper_folder_ids.get(paper.id) or [] %}
+      <div class="save-wrap" data-save-wrap>
+        <button type="button" class="save-btn {{ 'has-folders' if saved_folder_ids }}"
+                data-save-btn aria-haspopup="true" aria-expanded="false">
+          {{ "✓ Saved" if saved_folder_ids else "+ Save" }}
+        </button>
+        <div class="save-popover" data-save-popover hidden>
+          <ul class="folder-checklist" data-folder-checklist>
+            {% for folder in folders %}
+            <li>
+              <label>
+                <input type="checkbox" data-folder-checkbox value="{{ folder.id }}"
+                       {{ "checked" if folder.id in saved_folder_ids }}>
+                <span data-folder-name-label="{{ folder.id }}">{{ folder.name }}</span>
+              </label>
+            </li>
+            {% else %}
+            <li class="folder-list-empty" data-folder-list-empty>No folders yet.</li>
+            {% endfor %}
+          </ul>
+          <form class="new-folder-form" data-new-folder-form>
+            <input type="text" placeholder="New folder&hellip;" data-new-folder-input required>
+            <button type="submit" class="ghost">+ Add</button>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
 

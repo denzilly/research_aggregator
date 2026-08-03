@@ -14,7 +14,6 @@
     <nav class="nav-links">
       <a href="{{ url_for('main.digest') }}" class="{{ 'active' if request.endpoint == 'main.digest' }}">Digest</a>
       <a href="{{ url_for('main.search') }}" class="{{ 'active' if request.endpoint == 'main.search' }}">Search</a>
-      <a href="{{ url_for('main.search') }}?favorites=1">Favorites</a>
       <a href="{{ url_for('main.settings') }}" class="{{ 'active' if request.endpoint == 'main.settings' }}">Settings</a>
     </nav>
     <div class="pipeline-status {{ pipeline.status }}">
@@ -36,9 +35,14 @@
     {% endif %}
   </header>
 
-  <main class="{% block main_class %}{% endblock %}">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="page-shell">
+    <aside class="folder-pane">
+      {% include "_folder_pane.html" %}
+    </aside>
+    <main class="{% block main_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   {% block scripts %}{% endblock %}

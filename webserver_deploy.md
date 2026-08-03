@@ -13,9 +13,9 @@ Read alongside `project.md` (original plan).
 - **Ingestion pipeline** (`ingest/`): PubMed (E-utilities) + bioRxiv/medRxiv
   fetch, word-boundary keyword matching, OpenRouter batch scoring/
   summarization, SQLite storage with FTS5.
-- **Web app** (`app/`): digest view, FTS5 search with filters, favorites
-  (star toggle), settings (keyword editing + manual "run now" trigger).
-  "ScholarStream" design system.
+- **Web app** (`app/`): digest view, FTS5 search with filters, folders
+  (save papers into named folders via a left-hand pane), settings
+  (keyword editing + manual "run now" trigger). "ScholarStream" design system.
 - **DB**: migrated from the dev machine (177 already-scored papers) rather
   than re-scoring from scratch — see `data/phage_digest.db`.
 - **Scheduling**: OS-level crontab (`crontab -l` as `bart`), not Hermes —
@@ -47,8 +47,8 @@ correct the original plan:
   state re-fetches since the last successful run with a 1-day overlap
   (`OVERLAP_DAYS`) to catch late-indexed papers. Dedupe by id makes the
   overlap free.
-- **Write endpoints** (favorite toggle, settings save, run-now) are
-  gated by `WRITE_SECRET`: requests must include it via `X-Write-Secret`
+- **Write endpoints** (folder create/rename/delete, saving papers to
+  folders, settings save, run-now) are gated by `WRITE_SECRET`: requests must include it via `X-Write-Secret`
   header or `secret` form/query field. The web UI stores it in the
   browser's localStorage once entered on the Settings page.
 - **Whole-site password gate added post-deployment**, on top of (not
@@ -208,8 +208,8 @@ Still applies as-is — see verification checklist below.
 - [x] Digest/Search/Settings all load through the Cloudflare Tunnel URL
 - [x] Login gate: wrong password rejected, correct password grants a
       session, logout revokes it
-- [x] Favorite toggle and settings save work (write secret entered in
-      browser)
+- [x] Saving papers to folders and settings save work (write secret
+      entered in browser)
 - [x] Write endpoints reject requests without the correct secret (403
       confirmed) and accept it with the correct one (200 confirmed)
 - [ ] `data/phage_digest.db` is included in whatever backup process this
@@ -218,6 +218,15 @@ Still applies as-is — see verification checklist below.
 
 ## Still open (not blockers, but worth deciding)
 
+- **Folders migration deploy order** — the folders feature added
+  `folders`/`paper_folders` tables and a "Favorites" backfill to
+  `db/schema.sql`. Since every page now queries `folders` unconditionally,
+  `docker compose run --rm phage-digest python db.py` **must** be run
+  against the live DB before the new app code is deployed, or pages will
+  500 with `no such table: folders`. `is_favorite` was deliberately left
+  in place (unused) rather than dropped, given backup coverage below is
+  still unconfirmed — safe to `ALTER TABLE ... DROP COLUMN` later as a
+  follow-up once that's settled.
 - **Real keyword list** — currently still the placeholder
   (`bacteriophage, phage therapy, phage ecology`). Needs her actual
   subtopic input, set via the Settings page.

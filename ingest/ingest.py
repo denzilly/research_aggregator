@@ -64,9 +64,9 @@ def _insert_papers(conn, papers: list[dict], scores: dict[str, dict]) -> None:
     conn.executemany(
         """
         INSERT INTO papers (id, source, title, authors, published_date, abstract,
-                             summary, relevance_score, url, is_favorite, ingested_at)
+                             summary, relevance_score, url, ingested_at)
         VALUES (:id, :source, :title, :authors, :published_date, :abstract,
-                :summary, :relevance_score, :url, 0, :ingested_at)
+                :summary, :relevance_score, :url, :ingested_at)
         """,
         [
             {
