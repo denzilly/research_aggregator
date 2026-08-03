@@ -15,7 +15,7 @@ Read alongside `project.md` (original plan).
   summarization, SQLite storage with FTS5.
 - **Web app** (`app/`): digest view, FTS5 search with filters, folders
   (save papers into named folders via a left-hand pane), settings
-  (keyword editing + manual "run now" trigger). "ScholarStream" design system.
+  (keyword editing + manual "run now" trigger). "phageDB" design system.
 - **DB**: migrated from the dev machine (177 already-scored papers) rather
   than re-scoring from scratch — see `data/phage_digest.db`.
 - **Scheduling**: OS-level crontab (`crontab -l` as `bart`), not Hermes —

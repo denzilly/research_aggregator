@@ -58,10 +58,17 @@ def logout():
 @bp.route("/")
 def digest():
     conn = get_db()
-    papers = queries.get_digest_papers(conn)
+    window = request.args.get("window", queries.DEFAULT_DIGEST_WINDOW)
+    if window not in queries.DIGEST_WINDOWS:
+        window = queries.DEFAULT_DIGEST_WINDOW
+    papers = queries.get_digest_papers(conn, window_days=queries.DIGEST_WINDOWS[window])
     paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
     return render_template(
-        "digest.html", papers=papers, paper_folder_ids=paper_folder_ids, pipeline=_pipeline_status(conn)
+        "digest.html",
+        papers=papers,
+        paper_folder_ids=paper_folder_ids,
+        window=window,
+        pipeline=_pipeline_status(conn),
     )
 
 

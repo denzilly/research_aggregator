@@ -1,4 +1,4 @@
-/* ScholarStream design tokens, pulled from the Stitch project's design system */
+/* phageDB design tokens, pulled from the Stitch project's design system */
 :root {
   --surface: #051424;
   --surface-container-lowest: #010f1f;
@@ -64,6 +64,9 @@ a:hover { text-decoration: underline; }
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   font-size: 20px;
   letter-spacing: -0.01em;
@@ -71,6 +74,8 @@ a:hover { text-decoration: underline; }
 }
 
 .brand span { color: var(--primary); }
+
+.brand-icon { width: 26px; height: 26px; flex-shrink: 0; }
 
 .nav-links {
   display: flex;
@@ -230,6 +235,34 @@ h1.page-title {
   font-weight: 700;
   margin: 0 0 var(--container-margin);
 }
+
+.page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--gutter);
+  margin-bottom: var(--container-margin);
+}
+.page-title-row .page-title { margin-bottom: 0; }
+
+.window-toggle {
+  display: inline-flex;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  padding: 2px;
+  gap: 2px;
+}
+.window-toggle a {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+.window-toggle a:hover { color: var(--primary); text-decoration: none; }
+.window-toggle a.active { background: var(--primary-container); color: var(--on-primary); }
 
 /* Paper card */
 .paper-list { display: flex; flex-direction: column; gap: var(--compact-row); }

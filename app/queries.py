@@ -13,9 +13,13 @@ def get_latest_run(conn=None):
 
 DIGEST_WINDOW_DAYS = 7
 
+# Digest time-range filter options, in display order. None means no cutoff ("all").
+DIGEST_WINDOWS = {"day": 1, "week": DIGEST_WINDOW_DAYS, "month": 30, "all": None}
+DEFAULT_DIGEST_WINDOW = "week"
 
-def get_digest_papers(conn=None):
-    """Papers ingested in the last DIGEST_WINDOW_DAYS, relevance DESC.
+
+def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS):
+    """Papers ingested in the last window_days (None = no cutoff), relevance DESC.
 
     Deliberately a rolling window rather than "papers from the single most
     recent run" — steady-state runs often find 0 new papers on a given day
@@ -23,7 +27,11 @@ def get_digest_papers(conn=None):
     would render an empty digest most of the time even with plenty of
     recent papers to show."""
     conn = conn or db.get_connection()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=DIGEST_WINDOW_DAYS)).isoformat()
+    if window_days is None:
+        return conn.execute(
+            "SELECT * FROM papers ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
+        ).fetchall()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
     return conn.execute(
         """
         SELECT * FROM papers
