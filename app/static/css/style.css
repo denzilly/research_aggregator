@@ -73,7 +73,7 @@ a:hover { text-decoration: underline; }
   color: var(--on-surface);
 }
 
-.brand span { color: var(--primary); }
+.brand-text span { color: var(--primary); }
 
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; }
 
