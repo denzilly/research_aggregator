@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — ScholarStream{% endblock %}
+{% block title %}Settings — phageDB{% endblock %}
 {% block content %}
   <h1 class="page-title">Settings</h1>
 
@@ -40,7 +40,7 @@
     <h2>Write secret</h2>
     <p class="hint">
       {% if write_secret_configured %}
-        A WRITE_SECRET is configured on the server. Enter it here so this browser can save keywords / trigger runs / favorite papers.
+        A WRITE_SECRET is configured on the server. Enter it here so this browser can save keywords / trigger runs / save papers to folders.
       {% else %}
         No WRITE_SECRET is configured — write actions are currently open to anyone with the URL. This field only matters once one is set.
       {% endif %}

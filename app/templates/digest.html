@@ -1,7 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Digest — ScholarStream{% endblock %}
+{% block title %}Digest — phageDB{% endblock %}
 {% block content %}
-  <h1 class="page-title">Latest digest</h1>
+  <div class="page-title-row">
+    <h1 class="page-title">Latest digest</h1>
+    <div class="window-toggle" role="group" aria-label="Time range">
+      {% for key, label in [("day", "Day"), ("week", "Week"), ("month", "Month"), ("all", "All")] %}
+        <a href="{{ url_for('main.digest') }}?window={{ key }}" class="{{ 'active' if window == key }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
   {% if papers %}
     <div class="paper-list">
       {% for paper in papers %}

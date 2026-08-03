@@ -1,0 +1,19 @@
+<h2>Folders</h2>
+<ul class="folder-list" data-folder-list>
+  {% for folder in folders %}
+  <li data-folder-list-item="{{ folder.id }}" class="{{ 'active' if request.args.get('folder')|string == folder.id|string }}">
+    <a href="{{ url_for('main.search') }}?folder={{ folder.id }}">
+      <span data-folder-name-label="{{ folder.id }}">{{ folder.name }}</span>
+      <span class="folder-count" data-folder-count="{{ folder.id }}">{{ folder.paper_count }}</span>
+    </a>
+    <button type="button" class="folder-icon-btn" data-folder-rename-btn data-folder-id="{{ folder.id }}" aria-label="Rename folder">&#9998;</button>
+    <button type="button" class="folder-icon-btn" data-folder-delete-btn data-folder-id="{{ folder.id }}" aria-label="Delete folder">&#10005;</button>
+  </li>
+  {% else %}
+  <li class="folder-list-empty" data-folder-list-empty>No folders yet.</li>
+  {% endfor %}
+</ul>
+<form class="new-folder-form" data-new-folder-sidebar-form>
+  <input type="text" placeholder="New folder&hellip;" data-new-folder-sidebar-input required>
+  <button type="submit" class="ghost">+ New folder</button>
+</form>

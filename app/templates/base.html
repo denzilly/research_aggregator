@@ -3,18 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}ScholarStream — Phage Digest{% endblock %}</title>
+  <title>{% block title %}phageDB{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/phage-icon.svg') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
   <header class="site-header">
-    <div class="brand">Scholar<span>Stream</span></div>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='img/phage-icon.svg') }}" alt="" class="brand-icon">
+      phage<span>DB</span>
+    </div>
     <nav class="nav-links">
       <a href="{{ url_for('main.digest') }}" class="{{ 'active' if request.endpoint == 'main.digest' }}">Digest</a>
       <a href="{{ url_for('main.search') }}" class="{{ 'active' if request.endpoint == 'main.search' }}">Search</a>
-      <a href="{{ url_for('main.search') }}?favorites=1">Favorites</a>
       <a href="{{ url_for('main.settings') }}" class="{{ 'active' if request.endpoint == 'main.settings' }}">Settings</a>
     </nav>
     <div class="pipeline-status {{ pipeline.status }}">
@@ -36,9 +39,14 @@
     {% endif %}
   </header>
 
-  <main class="{% block main_class %}{% endblock %}">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="page-shell">
+    <aside class="folder-pane">
+      {% include "_folder_pane.html" %}
+    </aside>
+    <main class="{% block main_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   {% block scripts %}{% endblock %}

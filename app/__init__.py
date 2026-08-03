@@ -27,6 +27,11 @@ def create_app():
     def inject_auth_flag():
         return {"site_password_configured": bool(config.SITE_PASSWORD)}
 
+    @app.context_processor
+    def inject_folders():
+        from app import queries
+        return {"folders": queries.list_folders(get_db())}
+
     @app.before_request
     def require_login():
         if not config.SITE_PASSWORD:
