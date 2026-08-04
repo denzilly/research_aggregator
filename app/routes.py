@@ -24,15 +24,38 @@ def require_write_secret(f):
 
 
 def _pipeline_status(conn):
-    run = queries.get_latest_run(conn)
-    if not run:
+    """Aggregates the most recent ingestion invocation's runs rows (one per
+    query now, see ingest/ingest.py) into a single status for the header
+    pill. A batch of one row (legacy pre-migration data, or a single-query
+    invocation) behaves exactly like the old single-row status did."""
+    batch = queries.get_latest_run_batch(conn)
+    if not batch:
         return {"status": "never_run"}
+    if any(r["status"] == "running" for r in batch):
+        return {"status": "running"}
+    errors = [r for r in batch if r["status"] == "error"]
+    finished_at = max((r["finished_at"] for r in batch if r["finished_at"]), default=None)
+    if errors:
+        return {
+            "status": "error",
+            "finished_at": finished_at,
+            "error_message": f"{len(errors)} of {len(batch)} quer{'y' if len(batch) == 1 else 'ies'} failed",
+        }
     return {
-        "status": run["status"],
-        "finished_at": run["finished_at"],
-        "new_papers_count": run["new_papers_count"],
-        "error_message": run["error_message"],
+        "status": "ok",
+        "finished_at": finished_at,
+        "new_papers_count": sum(r["new_papers_count"] or 0 for r in batch),
     }
+
+
+def _safe_referrer():
+    """Only trust request.referrer as a redirect target if it points back at
+    this same host — a bare `redirect(request.referrer)` would otherwise be
+    a minor open-redirect surface."""
+    ref = request.referrer
+    if ref and ref.startswith(request.host_url):
+        return ref
+    return None
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -61,7 +84,10 @@ def digest():
     window = request.args.get("window", queries.DEFAULT_DIGEST_WINDOW)
     if window not in queries.DIGEST_WINDOWS:
         window = queries.DEFAULT_DIGEST_WINDOW
-    papers = queries.get_digest_papers(conn, window_days=queries.DIGEST_WINDOWS[window])
+    active_query_id = session.get("active_query_id")
+    papers = queries.get_digest_papers(
+        conn, window_days=queries.DIGEST_WINDOWS[window], query_id=active_query_id
+    )
     paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
     return render_template(
         "digest.html",
@@ -81,9 +107,16 @@ def search():
     until = request.args.get("until", "")
     folder_id = request.args.get("folder", type=int)
     folder = queries.get_folder(folder_id, conn) if folder_id else None
+    active_query_id = session.get("active_query_id")
 
     papers = queries.search_papers(
-        conn=conn, query=q, source=source, since=since, until=until, folder_id=folder_id
+        conn=conn,
+        query=q,
+        source=source,
+        since=since,
+        until=until,
+        folder_id=folder_id,
+        query_id=active_query_id,
     )
     paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
     return render_template(
@@ -152,31 +185,87 @@ def remove_paper_from_folder(paper_id, folder_id):
     return jsonify({"paper_id": paper_id, "folder_id": folder_id, "in_folder": False})
 
 
+def _render_queries_page(conn, status=200, **extra):
+    return render_template(
+        "queries.html",
+        query_list=queries.list_queries(conn),
+        write_secret_configured=bool(config.WRITE_SECRET),
+        pipeline=_pipeline_status(conn),
+        **extra,
+    ), status
+
+
+@bp.route("/queries", methods=["GET"])
+def queries_page():
+    return _render_queries_page(get_db())
+
+
+@bp.route("/queries", methods=["POST"])
+@require_write_secret
+def create_query():
+    conn = get_db()
+    name = request.form.get("name", "").strip()
+    keywords_raw = request.form.get("keywords", "")
+    if not name or not parse_keywords(keywords_raw):
+        abort(400)
+    query = queries.create_query(name, keywords_raw, conn)
+    if query == "max_reached":
+        return _render_queries_page(
+            conn, status=409,
+            error=f"Maximum of {queries.MAX_QUERIES} queries reached — delete one to add another.",
+        )
+    if query is None:
+        return _render_queries_page(conn, status=409, error="A query with that name already exists.")
+    backfilled = queries.backfill_query_matches(query["id"], parse_keywords(keywords_raw), conn)
+    return _render_queries_page(conn, created=query["name"], backfilled=backfilled)
+
+
+@bp.route("/queries/<int:query_id>", methods=["POST"])
+@require_write_secret
+def update_query(query_id):
+    conn = get_db()
+    name = request.form.get("name", "").strip()
+    keywords_raw = request.form.get("keywords", "")
+    if not name or not parse_keywords(keywords_raw):
+        abort(400)
+    result = queries.update_query(query_id, name, keywords_raw, conn)
+    if result is False:
+        abort(404)
+    if result is None:
+        return _render_queries_page(conn, status=409, error="A query with that name already exists.")
+    return _render_queries_page(conn, saved=query_id)
+
+
+@bp.route("/queries/<int:query_id>/delete", methods=["POST"])
+@require_write_secret
+def delete_query(query_id):
+    queries.delete_query(query_id, get_db())
+    if session.get("active_query_id") == query_id:
+        session.pop("active_query_id", None)
+    return redirect(url_for("main.queries_page"))
+
+
+@bp.route("/queries/<int:query_id>/activate", methods=["GET"])
+def activate_query(query_id):
+    if not queries.get_query(query_id, get_db()):
+        abort(404)
+    session["active_query_id"] = query_id
+    return redirect(_safe_referrer() or url_for("main.digest"))
+
+
+@bp.route("/queries/deactivate", methods=["GET"])
+def deactivate_query():
+    session.pop("active_query_id", None)
+    return redirect(_safe_referrer() or url_for("main.digest"))
+
+
 @bp.route("/settings", methods=["GET"])
 def settings():
     conn = get_db()
     return render_template(
         "settings.html",
-        keywords_raw=queries.get_keywords_raw(conn),
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
-    )
-
-
-@bp.route("/settings/keywords", methods=["POST"])
-@require_write_secret
-def save_keywords():
-    conn = get_db()
-    raw = request.form.get("keywords", "")
-    if not parse_keywords(raw):
-        abort(400)
-    queries.save_keywords_raw(raw, conn)
-    return render_template(
-        "settings.html",
-        keywords_raw=raw,
-        pipeline=_pipeline_status(conn),
-        write_secret_configured=bool(config.WRITE_SECRET),
-        saved=True,
     )
 
 
@@ -190,7 +279,6 @@ def run_now():
     )
     return render_template(
         "settings.html",
-        keywords_raw=queries.get_keywords_raw(conn),
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
         triggered=True,

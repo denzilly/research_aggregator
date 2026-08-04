@@ -1,0 +1,13 @@
+<h2>Queries</h2>
+<ul class="query-list">
+  <li class="{{ 'active' if not active_query }}">
+    <a href="{{ url_for('main.deactivate_query') }}">All queries</a>
+  </li>
+  {% for q in queries %}
+  <li class="{{ 'active' if active_query and active_query.id == q.id }}">
+    <a href="{{ url_for('main.activate_query', query_id=q.id) }}">{{ q.name }}</a>
+  </li>
+  {% else %}
+  <li class="query-list-empty">No queries yet — <a href="{{ url_for('main.queries_page') }}">add one</a>.</li>
+  {% endfor %}
+</ul>

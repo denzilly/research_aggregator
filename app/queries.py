@@ -2,13 +2,22 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import db
+from ingest.keywords import matches_keywords
 
 
-def get_latest_run(conn=None):
+def get_latest_run_batch(conn=None):
+    """All `runs` rows from the most recent ingestion invocation. Before
+    multi-query support there was one row per invocation; now there's one
+    per (invocation x query), all sharing the same started_at timestamp
+    (see ingest/ingest.py) — grouping on that gives invocation-level status
+    for free, with legacy single-row invocations behaving as a batch of one."""
     conn = conn or db.get_connection()
+    latest = conn.execute("SELECT MAX(started_at) AS s FROM runs").fetchone()["s"]
+    if latest is None:
+        return []
     return conn.execute(
-        "SELECT * FROM runs ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+        "SELECT * FROM runs WHERE started_at = ? ORDER BY id", (latest,)
+    ).fetchall()
 
 
 DIGEST_WINDOW_DAYS = 7
@@ -18,7 +27,7 @@ DIGEST_WINDOWS = {"day": 1, "week": DIGEST_WINDOW_DAYS, "month": 30, "all": None
 DEFAULT_DIGEST_WINDOW = "week"
 
 
-def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS):
+def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None):
     """Papers ingested in the last window_days (None = no cutoff), relevance DESC.
 
     Deliberately a rolling window rather than "papers from the single most
@@ -27,22 +36,20 @@ def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS):
     would render an empty digest most of the time even with plenty of
     recent papers to show."""
     conn = conn or db.get_connection()
-    if window_days is None:
-        return conn.execute(
-            "SELECT * FROM papers ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
-        ).fetchall()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
-    return conn.execute(
-        """
-        SELECT * FROM papers
-        WHERE ingested_at >= ?
-        ORDER BY relevance_score DESC NULLS LAST, published_date DESC
-        """,
-        (cutoff,),
-    ).fetchall()
+    sql = "SELECT * FROM papers WHERE 1=1"
+    params = []
+    if window_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+        sql += " AND ingested_at >= ?"
+        params.append(cutoff)
+    if query_id:
+        sql += " AND papers.id IN (SELECT paper_id FROM paper_queries WHERE query_id = ?)"
+        params.append(query_id)
+    sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
+    return conn.execute(sql, params).fetchall()
 
 
-def search_papers(query="", source="", since="", until="", folder_id=None, conn=None):
+def search_papers(query="", source="", since="", until="", folder_id=None, query_id=None, conn=None):
     conn = conn or db.get_connection()
 
     if query.strip():
@@ -68,6 +75,9 @@ def search_papers(query="", source="", since="", until="", folder_id=None, conn=
     if folder_id:
         sql += " AND papers.id IN (SELECT paper_id FROM paper_folders WHERE folder_id = ?)"
         params.append(folder_id)
+    if query_id:
+        sql += " AND papers.id IN (SELECT paper_id FROM paper_queries WHERE query_id = ?)"
+        params.append(query_id)
 
     sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
 
@@ -164,17 +174,88 @@ def remove_paper_from_folder(paper_id: str, folder_id: int, conn=None) -> None:
     conn.commit()
 
 
-def get_keywords_raw(conn=None) -> str:
-    conn = conn or db.get_connection()
-    row = conn.execute("SELECT value FROM settings WHERE key = 'keywords'").fetchone()
-    return row["value"] if row else ""
+MAX_QUERIES = 5
 
 
-def save_keywords_raw(value: str, conn=None) -> None:
+def list_queries(conn=None):
     conn = conn or db.get_connection()
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES ('keywords', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (value,),
+    return conn.execute("SELECT * FROM queries ORDER BY id").fetchall()
+
+
+def get_query(query_id, conn=None):
+    conn = conn or db.get_connection()
+    return conn.execute("SELECT * FROM queries WHERE id = ?", (query_id,)).fetchone()
+
+
+def count_queries(conn=None) -> int:
+    conn = conn or db.get_connection()
+    return conn.execute("SELECT COUNT(*) AS n FROM queries").fetchone()["n"]
+
+
+def create_query(name: str, keywords_raw: str, conn=None):
+    """Returns the new row, None if the name is taken, or "max_reached" if
+    MAX_QUERIES already exist."""
+    conn = conn or db.get_connection()
+    if count_queries(conn) >= MAX_QUERIES:
+        return "max_reached"
+    try:
+        cur = conn.execute(
+            "INSERT INTO queries (name, keywords_raw, created_at) VALUES (?, ?, datetime('now'))",
+            (name, keywords_raw),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return None
+    return conn.execute("SELECT * FROM queries WHERE id = ?", (cur.lastrowid,)).fetchone()
+
+
+def update_query(query_id: int, name: str, keywords_raw: str, conn=None):
+    """Returns True on success, False if the query doesn't exist, None if the
+    new name is taken by a different query."""
+    conn = conn or db.get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE queries SET name = ?, keywords_raw = ? WHERE id = ?",
+            (name, keywords_raw, query_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return None
+    return cur.rowcount > 0
+
+
+def delete_query(query_id: int, conn=None) -> bool:
+    """Deletes the query; paper_queries rows cascade, papers themselves are untouched."""
+    conn = conn or db.get_connection()
+    cur = conn.execute("DELETE FROM queries WHERE id = ?", (query_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def associate_papers_with_query(paper_ids: list[str], query_id: int, conn=None) -> None:
+    conn = conn or db.get_connection()
+    if not paper_ids:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO paper_queries (paper_id, query_id, added_at) "
+        "VALUES (?, ?, datetime('now'))",
+        [(pid, query_id) for pid in paper_ids],
     )
     conn.commit()
+
+
+def backfill_query_matches(query_id: int, keywords: list[str], conn=None) -> int:
+    """Scans every already-ingested paper for a keyword match and associates
+    it with this query immediately, so a newly-created query isn't empty
+    until the next ingestion run. Pure regex match, same function bioRxiv
+    filtering already uses (ingest/keywords.py) — no LLM/API cost, and no
+    re-scoring: a matched paper keeps whichever relevance_score/summary it
+    already has. Returns the number of papers associated."""
+    conn = conn or db.get_connection()
+    rows = conn.execute("SELECT id, title, abstract FROM papers").fetchall()
+    matches = [
+        row["id"] for row in rows
+        if matches_keywords(f"{row['title']}\n{row['abstract'] or ''}", keywords)
+    ]
+    associate_papers_with_query(matches, query_id, conn)
+    return len(matches)

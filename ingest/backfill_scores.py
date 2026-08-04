@@ -11,9 +11,20 @@ from ingest.scoring import score_and_summarize
 
 def run() -> int:
     conn = db.get_connection()
-    keywords = parse_keywords(
-        conn.execute("SELECT value FROM settings WHERE key = 'keywords'").fetchone()["value"]
-    )
+    # Union of every query's keywords (deduped) — settings.keywords is
+    # deprecated/frozen now that queries supersede the single global list.
+    query_rows = conn.execute("SELECT keywords_raw FROM queries").fetchall()
+    seen = set()
+    keywords = []
+    for row in query_rows:
+        for kw in parse_keywords(row["keywords_raw"]):
+            if kw.lower() not in seen:
+                seen.add(kw.lower())
+                keywords.append(kw)
+    if not keywords:
+        print("No queries configured — nothing to score against.")
+        return 0
+
     rows = conn.execute(
         "SELECT id, title, abstract FROM papers WHERE relevance_score IS NULL"
     ).fetchall()

@@ -4,20 +4,8 @@
   <h1 class="page-title">Settings</h1>
 
   <div class="settings-block">
-    <h2>Keywords</h2>
-    <p class="hint">Comma-separated. Used to build the PubMed query and to keyword-filter bioRxiv/medRxiv preprints.</p>
-    <form method="post" action="{{ url_for('main.save_keywords') }}">
-      <input type="hidden" name="secret" data-write-secret-field>
-      <textarea name="keywords">{{ keywords_raw }}</textarea>
-      <div class="settings-actions">
-        <button type="submit">Save keywords</button>
-        {% if saved %}<span class="flash">Saved.</span>{% endif %}
-      </div>
-    </form>
-  </div>
-
-  <div class="settings-block">
     <h2>Ingestion</h2>
+    <p class="hint">Runs every configured query. Manage what gets fetched on the <a href="{{ url_for('main.queries_page') }}">Queries</a> page.</p>
     {% if pipeline.status == 'never_run' %}
       <p class="hint">No ingestion runs yet.</p>
     {% elif pipeline.status == 'running' %}
@@ -40,7 +28,7 @@
     <h2>Write secret</h2>
     <p class="hint">
       {% if write_secret_configured %}
-        A WRITE_SECRET is configured on the server. Enter it here so this browser can save keywords / trigger runs / save papers to folders.
+        A WRITE_SECRET is configured on the server. Enter it here so this browser can manage queries / trigger runs / save papers to folders.
       {% else %}
         No WRITE_SECRET is configured — write actions are currently open to anyone with the URL. This field only matters once one is set.
       {% endif %}

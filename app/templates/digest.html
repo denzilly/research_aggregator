@@ -2,13 +2,16 @@
 {% block title %}Digest — phageDB{% endblock %}
 {% block content %}
   <div class="page-title-row">
-    <h1 class="page-title">Latest digest</h1>
+    <h1 class="page-title">{{ active_query.name if active_query else "Latest digest" }}</h1>
     <div class="window-toggle" role="group" aria-label="Time range">
       {% for key, label in [("day", "Day"), ("week", "Week"), ("month", "Month"), ("all", "All")] %}
         <a href="{{ url_for('main.digest') }}?window={{ key }}" class="{{ 'active' if window == key }}">{{ label }}</a>
       {% endfor %}
     </div>
   </div>
+  {% if active_query %}
+    <p class="active-query-banner">Viewing query <strong>{{ active_query.name }}</strong> — <a class="clear-link" href="{{ url_for('main.deactivate_query') }}">Clear query &#10005;</a></p>
+  {% endif %}
   {% if papers %}
     <div class="paper-list">
       {% for paper in papers %}

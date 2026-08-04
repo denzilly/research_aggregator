@@ -33,6 +33,23 @@ CREATE TABLE IF NOT EXISTS paper_folders (
 CREATE INDEX IF NOT EXISTS idx_paper_folders_folder ON paper_folders(folder_id);
 CREATE INDEX IF NOT EXISTS idx_paper_folders_paper ON paper_folders(paper_id);
 
+CREATE TABLE IF NOT EXISTS queries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  keywords_raw TEXT NOT NULL,   -- same flat comma-separated format as legacy settings.keywords
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS paper_queries (
+  paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  query_id INTEGER NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (paper_id, query_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_queries_query ON paper_queries(query_id);
+CREATE INDEX IF NOT EXISTS idx_paper_queries_paper ON paper_queries(paper_id);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
   title, abstract, summary, content='papers', content_rowid='rowid'
 );
@@ -62,6 +79,8 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- Placeholder seed — replace via the settings UI with the real subtopic list.
+-- DEPRECATED: superseded by the queries table (see below). Do not read/write
+-- this key from app code; kept only for the one-time migration below.
 INSERT OR IGNORE INTO settings (key, value) VALUES ('keywords', 'bacteriophage');
 
 -- One row per ingestion run. Source of truth for "since when do we fetch"
@@ -89,3 +108,23 @@ FROM papers, folders
 WHERE papers.is_favorite = 1 AND folders.name = 'Favorites';
 
 DROP INDEX IF EXISTS idx_papers_favorite;
+
+-- One-time migration: convert the legacy global settings.keywords value into
+-- a "Default" query, now that named queries supersede the single global
+-- keyword list, and associate every existing paper with it (they were all
+-- ingested under that single keyword list historically, so this is a
+-- lossless record of provenance, not a re-match). Only runs when there's
+-- existing paper data to migrate — mirrors the Favorites-folder backfill's
+-- guard, so a genuinely fresh install doesn't get an unsolicited query;
+-- the first one is created via the Queries page instead. Idempotent
+-- (INSERT OR IGNORE + UNIQUE(name) / PK(paper_id, query_id)) — safe to
+-- re-run on every init_db() call.
+INSERT OR IGNORE INTO queries (name, keywords_raw, created_at)
+SELECT 'Default', value, datetime('now')
+FROM settings
+WHERE key = 'keywords' AND EXISTS (SELECT 1 FROM papers);
+
+INSERT OR IGNORE INTO paper_queries (paper_id, query_id, added_at)
+SELECT papers.id, queries.id, datetime('now')
+FROM papers, queries
+WHERE queries.name = 'Default';
