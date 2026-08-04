@@ -32,6 +32,14 @@ def create_app():
         from app import queries
         return {"folders": queries.list_folders(get_db())}
 
+    @app.context_processor
+    def inject_queries():
+        from app import queries
+        conn = get_db()
+        active_id = session.get("active_query_id")
+        active_query = queries.get_query(active_id, conn) if active_id else None
+        return {"queries": queries.list_queries(conn), "active_query": active_query}
+
     @app.before_request
     def require_login():
         if not config.SITE_PASSWORD:

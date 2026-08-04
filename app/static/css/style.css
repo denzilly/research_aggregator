@@ -119,17 +119,25 @@ main {
   min-width: 0;
 }
 
-/* Folders pane */
-.folder-pane {
+/* Sidebar: queries pane stacked above the folders pane, independent of each other */
+.page-shell-sidebar {
   flex: 0 0 220px;
   position: sticky;
   top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.query-pane,
+.folder-pane {
   background: var(--surface-container-low);
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-lg);
   padding: 16px;
 }
 
+.query-pane h2,
 .folder-pane h2 {
   font-size: 13px;
   text-transform: uppercase;
@@ -137,6 +145,38 @@ main {
   color: var(--on-surface-variant);
   margin: 0 0 10px;
 }
+
+.query-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.query-list li a {
+  display: block;
+  padding: 6px 8px;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius);
+}
+
+.query-list li a:hover,
+.query-list li.active a {
+  color: var(--primary);
+  background: var(--surface-container-high);
+  text-decoration: none;
+}
+
+.query-list-empty {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.query-list li.query-list-empty a { display: inline; padding: 0; }
 
 .folder-list {
   list-style: none;
@@ -219,15 +259,22 @@ main {
   font-size: 12px;
 }
 
-.clear-folder-link {
+.clear-link {
   font-size: 12px;
   font-weight: 600;
   margin-left: 10px;
 }
 
+.active-query-banner {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  margin: -8px 0 16px;
+}
+.active-query-banner strong { color: var(--primary); }
+
 @media (max-width: 720px) {
   .page-shell { flex-direction: column; }
-  .folder-pane { position: static; flex-basis: auto; width: 100%; }
+  .page-shell-sidebar { position: static; flex-basis: auto; width: 100%; }
 }
 
 h1.page-title {

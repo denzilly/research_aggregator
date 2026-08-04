@@ -14,8 +14,10 @@ Read alongside `project.md` (original plan).
   fetch, word-boundary keyword matching, OpenRouter batch scoring/
   summarization, SQLite storage with FTS5.
 - **Web app** (`app/`): digest view, FTS5 search with filters, folders
-  (save papers into named folders via a left-hand pane), settings
-  (keyword editing + manual "run now" trigger). "phageDB" design system.
+  (save papers into named folders via a left-hand pane), queries (up to 5
+  named topic searches, each with its own keywords, selectable via a pane
+  above the folders one), settings (manual "run now" trigger). "phageDB"
+  design system.
 - **DB**: migrated from the dev machine (177 already-scored papers) rather
   than re-scoring from scratch — see `data/phage_digest.db`.
 - **Scheduling**: OS-level crontab (`crontab -l` as `bart`), not Hermes —
@@ -37,20 +39,39 @@ correct the original plan:
 - **bioRxiv/medRxiv have no keyword search API** — the ingestion fetch
   pre-filters by subject category (`ingest/biorxiv.py:SERVER_CATEGORIES`)
   before client-side keyword matching, because pulling every subject's
-  daily output was too slow (8+ min for a 2-week window). If her keyword
-  list later drifts into a new subject area, add the category there.
-- **Digest view is a rolling 7-day window** (`app/queries.py:
-  DIGEST_WINDOW_DAYS`), not "papers from the single most recent run" —
+  daily output was too slow (8+ min for a 2-week window). This category
+  list is shared/static across every query — if a query's keywords drift
+  into a new subject area, add the category there.
+- **Digest view is a rolling window** (default 7 days, day/week/month/all
+  selectable via a toggle on the Digest page — `app/queries.py:
+  DIGEST_WINDOWS`), not "papers from the single most recent run" —
   steady-state runs often find 0 new papers on a given day, so scoping to
   one run's boundary made the digest render empty most of the time.
+- **Multiple named queries, up to 5** (`queries` table, managed on the
+  Queries page) replaced the single global keyword list. Ingestion
+  (`ingest/ingest.py: run()`) loops over every defined query in one locked
+  invocation — same daily cron line / "Run now" trigger as before, no
+  argument changes — fetching, scoring, and inserting each independently.
+  A paper matching more than one query's keywords is only ever scored
+  once; it's just linked to every matching query via `paper_queries`. Each
+  query tracks its own fetch watermark, so a newly-created query gets its
+  own 30-day initial backfill regardless of how long other queries have
+  been running. **A fresh install with zero queries does nothing on
+  ingestion until at least one query is created via the UI** — there's no
+  more placeholder keyword seed making ingestion "just work" out of the
+  box the way there was pre-queries.
 - **First-run backfill is 30 days** (`INITIAL_BACKFILL_DAYS`), steady
   state re-fetches since the last successful run with a 1-day overlap
   (`OVERLAP_DAYS`) to catch late-indexed papers. Dedupe by id makes the
   overlap free.
 - **Write endpoints** (folder create/rename/delete, saving papers to
-  folders, settings save, run-now) are gated by `WRITE_SECRET`: requests must include it via `X-Write-Secret`
+  folders, query create/rename/delete, run-now) are gated by
+  `WRITE_SECRET`: requests must include it via `X-Write-Secret`
   header or `secret` form/query field. The web UI stores it in the
-  browser's localStorage once entered on the Settings page.
+  browser's localStorage once entered on the Settings page. Selecting
+  which query you're viewing (a session-scoped preference, not a shared
+  mutation) is **not** write-secret-gated — same trust level as being
+  logged in at all.
 - **Whole-site password gate added post-deployment**, on top of (not
   instead of) `WRITE_SECRET` — see "Deviation: auth" below. This
   supersedes project.md's "no auth system" non-goal.
@@ -208,8 +229,8 @@ Still applies as-is — see verification checklist below.
 - [x] Digest/Search/Settings all load through the Cloudflare Tunnel URL
 - [x] Login gate: wrong password rejected, correct password grants a
       session, logout revokes it
-- [x] Saving papers to folders and settings save work (write secret
-      entered in browser)
+- [x] Saving papers to folders and creating/editing queries work (write
+      secret entered in browser)
 - [x] Write endpoints reject requests without the correct secret (403
       confirmed) and accept it with the correct one (200 confirmed)
 - [ ] `data/phage_digest.db` is included in whatever backup process this
@@ -227,9 +248,19 @@ Still applies as-is — see verification checklist below.
   in place (unused) rather than dropped, given backup coverage below is
   still unconfirmed — safe to `ALTER TABLE ... DROP COLUMN` later as a
   follow-up once that's settled.
-- **Real keyword list** — currently still the placeholder
-  (`bacteriophage, phage therapy, phage ecology`). Needs her actual
-  subtopic input, set via the Settings page.
+- **Queries migration deploy order** — same requirement as above, now
+  also true of `queries`/`paper_queries`: run `docker compose run --rm
+  phage-digest python db.py` before deploying the new app code. This one
+  also adds a `runs.query_id` column via a Python-level `ALTER TABLE`
+  inside `db.py: init_db()` (SQLite has no `ADD COLUMN IF NOT EXISTS`
+  syntax, so it can't live in `schema.sql` itself) — still covered by the
+  same `python db.py` step, just worth knowing it's not purely
+  `schema.sql`-driven anymore. `settings.keywords` was left in place
+  (unused/frozen) rather than dropped, same reasoning as `is_favorite`.
+- **Real query keywords** — the migrated "Default" query still carries
+  whatever the old placeholder keyword list was. Worth reviewing/renaming
+  on the Queries page and splitting into separate named queries if the
+  actual subtopics are distinct enough to benefit from independent digests.
 - **Backup coverage** — confirm `data/phage_digest.db` is actually swept
   up by this server's existing backup process.
 - **Retention/pruning** — no policy yet; fine to leave papers accumulating

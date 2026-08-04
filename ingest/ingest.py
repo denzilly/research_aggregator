@@ -32,14 +32,15 @@ def _release_lock() -> None:
     config.LOCK_FILE_PATH.unlink(missing_ok=True)
 
 
-def _get_keywords(conn) -> list[str]:
-    row = conn.execute("SELECT value FROM settings WHERE key = 'keywords'").fetchone()
-    return parse_keywords(row["value"]) if row else []
-
-
-def _get_since_date(conn) -> "datetime.date":
+def _get_since_date(conn, query_id) -> "datetime.date":
+    """Per-query watermark — a query with no successful runs yet (brand new,
+    or never completed) falls through to the initial-backfill window, giving
+    each query independent history regardless of how long other queries have
+    been running."""
     row = conn.execute(
-        "SELECT finished_at FROM runs WHERE status = 'ok' ORDER BY finished_at DESC LIMIT 1"
+        "SELECT finished_at FROM runs WHERE status = 'ok' AND query_id = ? "
+        "ORDER BY finished_at DESC LIMIT 1",
+        (query_id,),
     ).fetchone()
     if row and row["finished_at"]:
         last_finished = datetime.fromisoformat(row["finished_at"])
@@ -81,7 +82,29 @@ def _insert_papers(conn, papers: list[dict], scores: dict[str, dict]) -> None:
     conn.commit()
 
 
+def _associate_with_query(conn, paper_ids: list[str], query_id: int) -> None:
+    """Links every fetched paper (new or already-existing) to this query, so
+    a paper first ingested for one query is still discoverable under another
+    query whose keywords also match it — without re-scoring it. This is what
+    makes cross-query overlap correct: dedup (_dedupe_against_db) only
+    decides what gets *inserted*/*scored*; this decides what gets *linked*,
+    and runs against the full fetched set regardless of dedup's outcome."""
+    if not paper_ids:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO paper_queries (paper_id, query_id, added_at) VALUES (?, ?, ?)",
+        [(pid, query_id, _now_iso()) for pid in paper_ids],
+    )
+    conn.commit()
+
+
 def run() -> int:
+    """Loops over every defined query in one locked invocation — same
+    zero-argument entrypoint as before (cron / "Run now" both still just
+    call `python -m ingest.ingest`), multi-query support lives entirely in
+    this loop. One query's failure doesn't abort the others; the overall
+    exit code is non-zero if any query failed, so cron/log monitoring still
+    surfaces problems."""
     if not _acquire_lock():
         print("Another ingestion run is already in progress — skipping.")
         return 0
@@ -93,58 +116,83 @@ def run() -> int:
         _release_lock()
         return 1
 
-    started_at = _now_iso()
-    cur = conn.execute(
-        "INSERT INTO runs (started_at, status) VALUES (?, 'running')", (started_at,)
-    )
-    conn.commit()
-    run_id = cur.lastrowid
-
     try:
-        keywords = _get_keywords(conn)
-        if not keywords:
-            raise RuntimeError("No keywords configured in settings table.")
+        query_rows = conn.execute(
+            "SELECT id, name, keywords_raw FROM queries ORDER BY id"
+        ).fetchall()
+        if not query_rows:
+            print("No queries configured — nothing to do.")
+            return 0
 
-        since_date = _get_since_date(conn)
-        until_date = datetime.now(timezone.utc).date()
+        # Shared across every runs row this invocation writes, so
+        # app/queries.py: get_latest_run_batch can group them back together
+        # for the header pipeline-status pill.
+        invocation_started_at = _now_iso()
+        any_failed = False
 
-        pubmed_papers = fetch_new_pubmed_papers(
-            keywords,
-            since_date.strftime("%Y/%m/%d"),
-            until_date.strftime("%Y/%m/%d"),
-            api_key=config.NCBI_API_KEY,
-        )
-        biorxiv_papers = fetch_new_biorxiv_papers(
-            keywords, since_date.isoformat(), until_date.isoformat()
-        )
+        for q in query_rows:
+            query_id, name = q["id"], q["name"]
+            keywords = parse_keywords(q["keywords_raw"])
 
-        all_papers = pubmed_papers + biorxiv_papers
-        new_papers = _dedupe_against_db(conn, all_papers)
+            cur = conn.execute(
+                "INSERT INTO runs (started_at, status, query_id) VALUES (?, 'running', ?)",
+                (invocation_started_at, query_id),
+            )
+            conn.commit()
+            run_id = cur.lastrowid
 
-        scores = score_and_summarize(new_papers, keywords) if new_papers else {}
-        _insert_papers(conn, new_papers, scores)
+            try:
+                if not keywords:
+                    raise RuntimeError(f"Query {name!r} has no keywords configured.")
 
-        conn.execute(
-            "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ? WHERE id = ?",
-            (_now_iso(), len(new_papers), run_id),
-        )
-        conn.commit()
+                since_date = _get_since_date(conn, query_id)
+                until_date = datetime.now(timezone.utc).date()
 
-        print(
-            f"Ingestion complete: {len(new_papers)} new papers "
-            f"({len(pubmed_papers)} pubmed matches, {len(biorxiv_papers)} biorxiv matches, "
-            f"since {since_date.isoformat()})."
-        )
-        return 0
+                pubmed_papers = fetch_new_pubmed_papers(
+                    keywords,
+                    since_date.strftime("%Y/%m/%d"),
+                    until_date.strftime("%Y/%m/%d"),
+                    api_key=config.NCBI_API_KEY,
+                )
+                biorxiv_papers = fetch_new_biorxiv_papers(
+                    keywords, since_date.isoformat(), until_date.isoformat()
+                )
 
-    except Exception as exc:
-        conn.execute(
-            "UPDATE runs SET finished_at = ?, status = 'error', error_message = ? WHERE id = ?",
-            (_now_iso(), str(exc), run_id),
-        )
-        conn.commit()
-        print(f"Ingestion failed: {exc}", file=sys.stderr)
-        return 1
+                all_papers = pubmed_papers + biorxiv_papers
+                new_papers = _dedupe_against_db(conn, all_papers)
+
+                scores = score_and_summarize(new_papers, keywords) if new_papers else {}
+                _insert_papers(conn, new_papers, scores)
+                # Link the *entire* fetched set, not just the new subset — a
+                # paper this query re-discovers (already ingested by an
+                # earlier query) still needs a paper_queries row, even
+                # though it's neither re-inserted nor re-scored.
+                _associate_with_query(conn, [p["id"] for p in all_papers], query_id)
+
+                conn.execute(
+                    "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ? WHERE id = ?",
+                    (_now_iso(), len(new_papers), run_id),
+                )
+                conn.commit()
+
+                print(
+                    f"[{name}] {len(new_papers)} new papers "
+                    f"({len(pubmed_papers)} pubmed matches, {len(biorxiv_papers)} biorxiv matches, "
+                    f"since {since_date.isoformat()})."
+                )
+
+            except Exception as exc:
+                conn.rollback()
+                conn.execute(
+                    "UPDATE runs SET finished_at = ?, status = 'error', error_message = ? WHERE id = ?",
+                    (_now_iso(), str(exc), run_id),
+                )
+                conn.commit()
+                any_failed = True
+                print(f"[{name}] failed: {exc}", file=sys.stderr)
+                continue
+
+        return 1 if any_failed else 0
 
     finally:
         conn.close()

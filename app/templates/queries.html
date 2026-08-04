@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Queries — phageDB{% endblock %}
+{% block content %}
+  <h1 class="page-title">Queries</h1>
+  <p class="hint" style="margin: -8px 0 20px;">Each query fetches and scores its own set of papers, independently of the others. Pick which one you're viewing from the pane on the left.</p>
+
+  {% if error %}<p class="hint" style="color: var(--error)">{{ error }}</p>{% endif %}
+
+  {% for q in query_list %}
+  <div class="settings-block">
+    <h2>{{ q.name }}</h2>
+    <form method="post" action="{{ url_for('main.update_query', query_id=q.id) }}">
+      <input type="hidden" name="secret" data-write-secret-field>
+      <div class="field-group">
+        <label for="name-{{ q.id }}">Name</label>
+        <input type="text" id="name-{{ q.id }}" name="name" value="{{ q.name }}">
+      </div>
+      <label for="keywords-{{ q.id }}" class="hint">Comma-separated. Used to build the PubMed query and to keyword-filter bioRxiv/medRxiv preprints.</label>
+      <textarea id="keywords-{{ q.id }}" name="keywords">{{ q.keywords_raw }}</textarea>
+      <div class="settings-actions">
+        <button type="submit">Save</button>
+        {% if saved == q.id %}<span class="flash">Saved.</span>{% endif %}
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('main.delete_query', query_id=q.id) }}"
+          onsubmit="return confirm('Delete &quot;{{ q.name }}&quot;? Its papers stay in the archive, just no longer grouped under this query.');">
+      <input type="hidden" name="secret" data-write-secret-field>
+      <div class="settings-actions">
+        <button type="submit" class="ghost">Delete query</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+
+  {% if query_list|length < 5 %}
+  <div class="settings-block">
+    <h2>New query</h2>
+    <form method="post" action="{{ url_for('main.create_query') }}">
+      <input type="hidden" name="secret" data-write-secret-field>
+      <div class="field-group">
+        <label for="new-name">Name</label>
+        <input type="text" id="new-name" name="name" placeholder="e.g. Phage therapy">
+      </div>
+      <label for="new-keywords" class="hint">Comma-separated. New queries immediately backfill from the existing archive, then keep fetching going forward.</label>
+      <textarea id="new-keywords" name="keywords" placeholder="phage therapy, clinical trial"></textarea>
+      <div class="settings-actions">
+        <button type="submit">Create query</button>
+        {% if created %}<span class="flash">Created "{{ created }}" — matched {{ backfilled }} existing paper{{ "" if backfilled == 1 else "s" }}.</span>{% endif %}
+      </div>
+    </form>
+  </div>
+  {% else %}
+  <p class="hint">Maximum of 5 queries reached — delete one to add another.</p>
+  {% endif %}
+{% endblock %}

@@ -4,8 +4,9 @@ A daily research digest of bacteriophage-related papers, self-hosted and
 exposed via Cloudflare Tunnel at `research.btblog.dev`. Pulls new papers
 from PubMed and bioRxiv/medRxiv by keyword, scores/summarizes them with an
 LLM via OpenRouter, and serves them through a small Flask app
-("phageDB") with a digest view, full-text search, and folders for
-saving papers.
+("phageDB") with a digest view, full-text search, folders for saving
+papers, and up to 5 independent named queries (each with its own keyword
+list, fetched/scored separately) to browse.
 
 ## Docs
 
