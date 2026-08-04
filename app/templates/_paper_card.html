@@ -1,38 +1,17 @@
+{% set source_labels = {"pubmed": "PubMed", "biorxiv": "bioRxiv", "medrxiv": "medRxiv"} %}
+{% set source_label = source_labels.get(paper.source, paper.source) %}
+{% set year = (paper.published_date[:4] if paper.published_date else "") %}
+{% set citation = (paper.authors or "Unknown authors") ~ (" (" ~ year ~ ")." if year else ".") ~ " " ~ paper.title ~ ("" if paper.title.endswith(".") else ".") ~ " " ~ source_label ~ "." ~ (" " ~ paper.url if paper.url else "") %}
 <article class="paper-card" data-paper-id="{{ paper.id }}">
   <div class="paper-card-top">
     <h3 class="paper-title">
       <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.title }}</a>
     </h3>
     <div class="paper-card-actions">
+      <span class="source-badge source-{{ paper.source }}">{{ source_label }}</span>
       {% if paper.relevance_score is not none %}
         <span class="score-badge">{{ "%.0f"|format(paper.relevance_score) }}/10</span>
       {% endif %}
-      {% set saved_folder_ids = paper_folder_ids.get(paper.id) or [] %}
-      <div class="save-wrap" data-save-wrap>
-        <button type="button" class="save-btn {{ 'has-folders' if saved_folder_ids }}"
-                data-save-btn aria-haspopup="true" aria-expanded="false">
-          {{ "✓ Saved" if saved_folder_ids else "+ Save" }}
-        </button>
-        <div class="save-popover" data-save-popover hidden>
-          <ul class="folder-checklist" data-folder-checklist>
-            {% for folder in folders %}
-            <li>
-              <label>
-                <input type="checkbox" data-folder-checkbox value="{{ folder.id }}"
-                       {{ "checked" if folder.id in saved_folder_ids }}>
-                <span data-folder-name-label="{{ folder.id }}">{{ folder.name }}</span>
-              </label>
-            </li>
-            {% else %}
-            <li class="folder-list-empty" data-folder-list-empty>No folders yet.</li>
-            {% endfor %}
-          </ul>
-          <form class="new-folder-form" data-new-folder-form>
-            <input type="text" placeholder="New folder&hellip;" data-new-folder-input required>
-            <button type="submit" class="ghost">+ Add</button>
-          </form>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -47,10 +26,42 @@
   {% endif %}
 
   <div class="paper-card-footer">
-    <span class="field-badge">{{ paper.source }}</span>
-    {% if paper.url %}
-      <a class="doi-link" href="{{ paper.url }}" target="_blank" rel="noopener">View source</a>
-    {% endif %}
-    <span class="pub-date">Ingested {{ paper.ingested_at[:10] }}</span>
+    <div class="paper-card-footer-left">
+      <span class="pub-date" data-timestamp="{{ paper.ingested_at }}">Ingested {{ paper.ingested_at[:10] }}</span>
+    </div>
+    <div class="row-actions">
+      {% set saved_folder_ids = paper_folder_ids.get(paper.id) or [] %}
+      <div class="save-wrap" data-save-wrap>
+        <button type="button" class="row-action-btn {{ 'has-folders' if saved_folder_ids }}"
+                data-save-btn aria-haspopup="true" aria-expanded="false" title="Save to folder">
+          <span class="material-symbols-outlined">{{ 'bookmark' if saved_folder_ids else 'bookmark_border' }}</span>
+          <span>{{ "Saved" if saved_folder_ids else "Save" }}</span>
+        </button>
+        <div class="save-popover" data-save-popover hidden>
+          <ul class="folder-checklist" data-folder-checklist>
+            {% for folder in folders %}
+            <li>
+              <label>
+                <input type="checkbox" data-folder-checkbox value="{{ folder.id }}"
+                       {{ "checked" if folder.id in saved_folder_ids }}>
+                <span class="folder-dot" data-folder-color-dot="{{ folder.id }}" style="background-color: {{ folder.color or 'var(--on-surface-faint)' }};"></span>
+                <span data-folder-name-label="{{ folder.id }}">{{ folder.name }}</span>
+              </label>
+            </li>
+            {% else %}
+            <li class="folder-list-empty" data-folder-list-empty>No folders yet.</li>
+            {% endfor %}
+          </ul>
+          <form class="new-folder-form" data-new-folder-form>
+            <input type="text" placeholder="New folder&hellip;" data-new-folder-input required>
+            <button type="submit" class="ghost">+ Add</button>
+          </form>
+        </div>
+      </div>
+      <button type="button" class="row-action-btn" data-cite-btn data-citation="{{ citation }}" title="Copy citation">
+        <span class="material-symbols-outlined">format_quote</span>
+        <span data-cite-label>Cite</span>
+      </button>
+    </div>
   </div>
 </article>

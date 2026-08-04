@@ -1,5 +1,10 @@
 const WRITE_SECRET_KEY = "phage_digest_write_secret";
 
+// Kept in sync with FOLDER_COLORS in app/queries.py — used when rendering
+// folders created client-side (the manage-folders popover's "new folder"
+// swatches are server-rendered from that same list already).
+const FOLDER_COLORS = ["#60a5fa", "#4ade80", "#fbbf24", "#f472b6", "#a78bfa", "#f87171", "#38bdf8", "#94a3b8"];
+
 function getWriteSecret() {
   return localStorage.getItem(WRITE_SECRET_KEY) || "";
 }
@@ -19,14 +24,38 @@ if (saveSecretBtn) {
   });
 }
 
-// ---- Folders / save-to-folder ----
-
 function writeSecretHeaders(extra) {
   return Object.assign({ "X-Write-Secret": getWriteSecret() }, extra || {});
 }
 
+// ---- Mobile off-canvas drawer (Queries / Folders / nav, behind the hamburger) ----
+
+const drawerToggle = document.querySelector("[data-drawer-toggle]");
+const drawerSidebar = document.querySelector("[data-app-sidebar]");
+const drawerOverlay = document.querySelector("[data-drawer-overlay]");
+
+function setDrawerOpen(open) {
+  if (!drawerSidebar || !drawerOverlay || !drawerToggle) return;
+  drawerSidebar.classList.toggle("open", open);
+  drawerOverlay.classList.toggle("open", open);
+  drawerToggle.setAttribute("aria-expanded", String(open));
+  document.body.style.overflow = open ? "hidden" : "";
+}
+
+if (drawerToggle) {
+  drawerToggle.addEventListener("click", () => {
+    setDrawerOpen(!drawerSidebar.classList.contains("open"));
+  });
+  drawerOverlay.addEventListener("click", () => setDrawerOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setDrawerOpen(false);
+  });
+}
+
+// ---- Popovers (save-to-folder + manage-folders share one open-at-a-time model) ----
+
 function closeAllPopovers(except) {
-  document.querySelectorAll("[data-save-popover]").forEach((pop) => {
+  document.querySelectorAll("[data-save-popover], [data-folder-manage-popover]").forEach((pop) => {
     if (pop !== except) {
       pop.hidden = true;
       const btn = pop.previousElementSibling;
@@ -46,18 +75,48 @@ document.querySelectorAll("[data-save-btn]").forEach((btn) => {
   });
 });
 
+document.querySelectorAll("[data-folder-manage-btn]").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const popover = btn.nextElementSibling;
+    const opening = popover.hidden;
+    closeAllPopovers(opening ? popover : null);
+    if (opening) {
+      // Fixed-positioned (not CSS-anchored) because the sidebar scrolls
+      // (overflow-y: auto for its sticky behavior), which would otherwise
+      // clip an absolutely-positioned popover. Clamped to the viewport so it
+      // doesn't run off-screen on narrow (mobile drawer) widths.
+      const rect = btn.getBoundingClientRect();
+      popover.hidden = false;
+      const popoverWidth = popover.offsetWidth;
+      const maxLeft = window.innerWidth - popoverWidth - 8;
+      const left = Math.max(8, Math.min(rect.left, maxLeft));
+      popover.style.top = `${rect.bottom + 6}px`;
+      popover.style.left = `${left}px`;
+    } else {
+      popover.hidden = true;
+    }
+    btn.setAttribute("aria-expanded", String(opening));
+  });
+});
+
 document.addEventListener("click", (e) => {
-  if (!e.target.closest("[data-save-wrap]")) closeAllPopovers();
+  if (!e.target.closest("[data-save-wrap]") && !e.target.closest("[data-folder-manage-wrap]")) {
+    closeAllPopovers();
+  }
 });
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeAllPopovers();
 });
 
+// ---- Save-to-folder ----
+
 function updateSaveButtonState(wrap) {
   const btn = wrap.querySelector("[data-save-btn]");
   const anyChecked = !!wrap.querySelector("[data-folder-checkbox]:checked");
-  btn.textContent = anyChecked ? "✓ Saved" : "+ Save";
+  btn.querySelector(".material-symbols-outlined").textContent = anyChecked ? "bookmark" : "bookmark_border";
+  btn.querySelector("span:last-child").textContent = anyChecked ? "Saved" : "Save";
   btn.classList.toggle("has-folders", anyChecked);
 }
 
@@ -65,47 +124,6 @@ function bumpFolderCount(folderId, delta) {
   document.querySelectorAll(`[data-folder-count="${folderId}"]`).forEach((el) => {
     el.textContent = String(Math.max(0, parseInt(el.textContent, 10) + delta));
   });
-}
-
-document.querySelectorAll("[data-folder-checkbox]").forEach((checkbox) => {
-  checkbox.addEventListener("change", checkboxChangeHandler(checkbox));
-});
-
-function folderListItemHTML(folder) {
-  return `<a href="/search?folder=${folder.id}">
-      <span data-folder-name-label="${folder.id}"></span>
-      <span class="folder-count" data-folder-count="${folder.id}">0</span>
-    </a>
-    <button type="button" class="folder-icon-btn" data-folder-rename-btn data-folder-id="${folder.id}" aria-label="Rename folder">&#9998;</button>
-    <button type="button" class="folder-icon-btn" data-folder-delete-btn data-folder-id="${folder.id}" aria-label="Delete folder">&#10005;</button>`;
-}
-
-function addFolderToSidebar(folder) {
-  const list = document.querySelector("[data-folder-list]");
-  if (!list) return;
-  const empty = list.querySelector("[data-folder-list-empty]");
-  if (empty) empty.remove();
-  const li = document.createElement("li");
-  li.dataset.folderListItem = folder.id;
-  li.innerHTML = folderListItemHTML(folder);
-  li.querySelector("[data-folder-name-label]").textContent = folder.name;
-  list.appendChild(li);
-  bindFolderActionButtons(li);
-}
-
-function addFolderToPopover(popover, folder, checked) {
-  const list = popover.querySelector("[data-folder-checklist]");
-  const empty = list.querySelector("[data-folder-list-empty]");
-  if (empty) empty.remove();
-  const li = document.createElement("li");
-  li.innerHTML = `<label>
-      <input type="checkbox" data-folder-checkbox value="${folder.id}" ${checked ? "checked" : ""}>
-      <span data-folder-name-label="${folder.id}"></span>
-    </label>`;
-  li.querySelector("[data-folder-name-label]").textContent = folder.name;
-  const checkbox = li.querySelector("[data-folder-checkbox]");
-  checkbox.addEventListener("change", checkboxChangeHandler(checkbox));
-  list.appendChild(li);
 }
 
 function checkboxChangeHandler(checkbox) {
@@ -133,8 +151,189 @@ function checkboxChangeHandler(checkbox) {
   };
 }
 
+document.querySelectorAll("[data-folder-checkbox]").forEach((checkbox) => {
+  checkbox.addEventListener("change", checkboxChangeHandler(checkbox));
+});
+
+function addFolderToPopover(popover, folder, checked) {
+  const list = popover.querySelector("[data-folder-checklist]");
+  const empty = list.querySelector("[data-folder-list-empty]");
+  if (empty) empty.remove();
+  const li = document.createElement("li");
+  li.innerHTML = `<label>
+      <input type="checkbox" data-folder-checkbox value="${folder.id}" ${checked ? "checked" : ""}>
+      <span class="folder-dot" data-folder-color-dot="${folder.id}"></span>
+      <span data-folder-name-label="${folder.id}"></span>
+    </label>`;
+  li.querySelector("[data-folder-name-label]").textContent = folder.name;
+  li.querySelector("[data-folder-color-dot]").style.backgroundColor = folder.color || "var(--on-surface-faint)";
+  const checkbox = li.querySelector("[data-folder-checkbox]");
+  checkbox.addEventListener("change", checkboxChangeHandler(checkbox));
+  list.appendChild(li);
+}
+
+// ---- Sidebar folder list ----
+
+function addFolderToSidebar(folder) {
+  const list = document.querySelector("[data-folder-list]");
+  if (!list) return;
+  const empty = list.querySelector("[data-folder-list-empty]");
+  if (empty) empty.remove();
+  const li = document.createElement("li");
+  li.className = "sidebar-item";
+  li.dataset.folderListItem = folder.id;
+  li.innerHTML = `<a href="/search?folder=${folder.id}">
+      <span class="folder-dot" data-folder-color-dot="${folder.id}"></span>
+      <span class="sidebar-item-name" data-folder-name-label="${folder.id}"></span>
+      <span class="sidebar-count" data-folder-count="${folder.id}">0</span>
+    </a>`;
+  li.querySelector("[data-folder-name-label]").textContent = folder.name;
+  li.querySelector("[data-folder-color-dot]").style.backgroundColor = folder.color || "var(--on-surface-faint)";
+  list.appendChild(li);
+}
+
+// ---- Manage-folders popover (rename / color / delete / create) ----
+
+function colorSwatchesHTML(folderId, selectedColor) {
+  return FOLDER_COLORS.map(
+    (color) => `<button type="button" class="color-swatch${color === selectedColor ? " selected" : ""}"
+        style="background-color: ${color};" data-set-folder-color
+        data-folder-id="${folderId}" data-color="${color}" aria-label="Set color"></button>`
+  ).join("");
+}
+
+function addFolderToManagePopover(folder) {
+  const list = document.querySelector("[data-folder-manage-list]");
+  if (!list) return;
+  const empty = list.querySelector("[data-folder-manage-empty]");
+  if (empty) empty.remove();
+  const item = document.createElement("div");
+  item.className = "folder-manage-item";
+  item.dataset.folderListItem = folder.id;
+  item.innerHTML = `<div class="folder-manage-row">
+      <span class="folder-dot" data-folder-color-dot="${folder.id}"></span>
+      <input type="text" class="folder-manage-name-input" data-folder-rename-input data-folder-id="${folder.id}">
+      <button type="button" class="sidebar-icon-btn" data-folder-delete-btn data-folder-id="${folder.id}" aria-label="Delete folder"><span class="material-symbols-outlined">delete</span></button>
+    </div>
+    <div class="color-palette" data-folder-color-palette="${folder.id}">${colorSwatchesHTML(folder.id, folder.color)}</div>`;
+  item.querySelector("[data-folder-rename-input]").value = folder.name;
+  item.querySelector("[data-folder-color-dot]").style.backgroundColor = folder.color || "var(--on-surface-faint)";
+  list.appendChild(item);
+  bindFolderManageScope(item);
+}
+
+function bindFolderRenameInput(input) {
+  const commit = async () => {
+    const folderId = input.dataset.folderId;
+    const current = document.querySelector(`[data-folder-name-label="${folderId}"]`).textContent;
+    const name = input.value.trim();
+    if (!name || name === current) {
+      input.value = current;
+      return;
+    }
+    try {
+      const resp = await fetch(`/folders/${folderId}`, {
+        method: "PATCH",
+        headers: writeSecretHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ name }),
+      });
+      if (resp.status === 409) {
+        alert("A folder with that name already exists.");
+        input.value = current;
+        return;
+      }
+      if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
+      document.querySelectorAll(`[data-folder-name-label="${folderId}"]`).forEach((el) => {
+        el.textContent = name;
+      });
+    } catch (err) {
+      alert("Couldn't rename folder — check your write secret in Settings.");
+      input.value = current;
+    }
+  };
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+}
+
+function bindColorSwatch(btn) {
+  btn.addEventListener("click", async () => {
+    const folderId = btn.dataset.folderId;
+    const color = btn.dataset.color;
+    try {
+      const resp = await fetch(`/folders/${folderId}`, {
+        method: "PATCH",
+        headers: writeSecretHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ color }),
+      });
+      if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
+      btn.closest("[data-folder-color-palette]").querySelectorAll(".color-swatch").forEach((s) => {
+        s.classList.remove("selected");
+      });
+      btn.classList.add("selected");
+      document.querySelectorAll(`[data-folder-color-dot="${folderId}"]`).forEach((dot) => {
+        dot.style.backgroundColor = color;
+      });
+    } catch (err) {
+      alert("Couldn't update folder color — check your write secret in Settings.");
+    }
+  });
+}
+
+function bindFolderDeleteButton(btn) {
+  btn.addEventListener("click", async () => {
+    const folderId = btn.dataset.folderId;
+    const name = document.querySelector(`[data-folder-name-label="${folderId}"]`).textContent;
+    if (!confirm(`Delete "${name}"? Papers inside it won't be deleted.`)) return;
+    try {
+      const resp = await fetch(`/folders/${folderId}`, {
+        method: "DELETE",
+        headers: writeSecretHeaders(),
+      });
+      if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
+      document.querySelectorAll(`[data-folder-list-item="${folderId}"]`).forEach((el) => el.remove());
+      document.querySelectorAll(`[data-folder-checkbox][value="${folderId}"]`).forEach((checkbox) => {
+        const wrap = checkbox.closest("[data-save-wrap]");
+        checkbox.closest("li").remove();
+        if (wrap) updateSaveButtonState(wrap);
+      });
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("folder") === folderId) {
+        window.location.href = "/search";
+      }
+    } catch (err) {
+      alert("Couldn't delete folder — check your write secret in Settings.");
+    }
+  });
+}
+
+function bindFolderManageScope(scope) {
+  scope.querySelectorAll("[data-folder-rename-input]").forEach(bindFolderRenameInput);
+  scope.querySelectorAll("[data-set-folder-color]").forEach(bindColorSwatch);
+  scope.querySelectorAll("[data-folder-delete-btn]").forEach(bindFolderDeleteButton);
+}
+
+bindFolderManageScope(document);
+
+document.querySelectorAll("[data-new-folder-color-palette]").forEach((palette) => {
+  palette.querySelectorAll("[data-new-folder-color]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      palette.querySelectorAll(".color-swatch").forEach((s) => s.classList.remove("selected"));
+      btn.classList.add("selected");
+    });
+  });
+});
+
+// ---- Create folder (shared by the manage-folders popover and each paper
+// card's quick "+ Add" mini-form inside the save popover) ----
+
 function addFolderEverywhere(folder, originWrap) {
   addFolderToSidebar(folder);
+  addFolderToManagePopover(folder);
   document.querySelectorAll("[data-save-popover]").forEach((popover) => {
     const wrap = popover.closest("[data-save-wrap]");
     addFolderToPopover(popover, folder, wrap === originWrap);
@@ -142,11 +341,11 @@ function addFolderEverywhere(folder, originWrap) {
   });
 }
 
-async function createFolder(name) {
+async function createFolder(name, color) {
   const resp = await fetch("/folders", {
     method: "POST",
     headers: writeSecretHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, color: color || null }),
   });
   if (resp.status === 409) {
     alert("A folder with that name already exists.");
@@ -165,9 +364,11 @@ document.querySelectorAll("[data-new-folder-form]").forEach((form) => {
     const input = form.querySelector("[data-new-folder-input]");
     const name = input.value.trim();
     if (!name) return;
+    const colorBtn = form.querySelector("[data-new-folder-color].selected");
+    const color = colorBtn ? colorBtn.dataset.color : null;
     const wrap = form.closest("[data-save-wrap]");
     const card = form.closest("[data-paper-id]");
-    const folder = await createFolder(name);
+    const folder = await createFolder(name, color);
     if (!folder) return;
     addFolderEverywhere(folder, wrap);
     if (card) {
@@ -188,73 +389,67 @@ document.querySelectorAll("[data-new-folder-form]").forEach((form) => {
   });
 });
 
-const sidebarNewFolderForm = document.querySelector("[data-new-folder-sidebar-form]");
-if (sidebarNewFolderForm) {
-  sidebarNewFolderForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = sidebarNewFolderForm.querySelector("[data-new-folder-sidebar-input]");
-    const name = input.value.trim();
-    if (!name) return;
-    const folder = await createFolder(name);
-    if (!folder) return;
-    addFolderEverywhere(folder, null);
-    input.value = "";
-  });
+// ---- Cite ----
+
+async function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  // Fallback for non-HTTPS/older browsers.
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
 }
 
-function bindFolderActionButtons(scope) {
-  scope.querySelectorAll("[data-folder-rename-btn]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const folderId = btn.dataset.folderId;
-      const current = document.querySelector(`[data-folder-name-label="${folderId}"]`).textContent;
-      const name = prompt("Rename folder", current);
-      if (!name || !name.trim() || name.trim() === current) return;
-      try {
-        const resp = await fetch(`/folders/${folderId}`, {
-          method: "PATCH",
-          headers: writeSecretHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ name: name.trim() }),
-        });
-        if (resp.status === 409) {
-          alert("A folder with that name already exists.");
-          return;
-        }
-        if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
-        document.querySelectorAll(`[data-folder-name-label="${folderId}"]`).forEach((el) => {
-          el.textContent = name.trim();
-        });
-      } catch (err) {
-        alert("Couldn't rename folder — check your write secret in Settings.");
-      }
-    });
+document.querySelectorAll("[data-cite-btn]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const label = btn.querySelector("[data-cite-label]");
+    try {
+      await copyToClipboard(btn.dataset.citation);
+      const original = label.textContent;
+      label.textContent = "Copied!";
+      setTimeout(() => (label.textContent = original), 1500);
+    } catch (err) {
+      alert("Couldn't copy citation to clipboard.");
+    }
   });
+});
 
-  scope.querySelectorAll("[data-folder-delete-btn]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const folderId = btn.dataset.folderId;
-      const name = document.querySelector(`[data-folder-name-label="${folderId}"]`).textContent;
-      if (!confirm(`Delete "${name}"? Papers inside it won't be deleted.`)) return;
-      try {
-        const resp = await fetch(`/folders/${folderId}`, {
-          method: "DELETE",
-          headers: writeSecretHeaders(),
-        });
-        if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
-        document.querySelectorAll(`[data-folder-list-item="${folderId}"]`).forEach((el) => el.remove());
-        document.querySelectorAll(`[data-folder-checkbox][value="${folderId}"]`).forEach((checkbox) => {
-          const wrap = checkbox.closest("[data-save-wrap]");
-          checkbox.closest("li").remove();
-          if (wrap) updateSaveButtonState(wrap);
-        });
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("folder") === folderId) {
-          window.location.href = "/search";
-        }
-      } catch (err) {
-        alert("Couldn't delete folder — check your write secret in Settings.");
-      }
-    });
-  });
+// ---- Relative timestamps ----
+
+function timeAgo(iso) {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const seconds = Math.max(0, (Date.now() - then) / 1000);
+  const steps = [
+    [60, "s"],
+    [60, "m"],
+    [24, "h"],
+    [30, "d"],
+    [12, "mo"],
+    [Infinity, "y"],
+  ];
+  let value = seconds;
+  let unit = "s";
+  for (const [amount, label] of steps) {
+    if (value < amount) {
+      unit = label;
+      break;
+    }
+    value /= amount;
+  }
+  const rounded = Math.floor(value);
+  if (unit === "s" && rounded < 60) return "just now";
+  return `${rounded}${unit} ago`;
 }
 
-bindFolderActionButtons(document);
+document.querySelectorAll("[data-timestamp]").forEach((el) => {
+  const rendered = timeAgo(el.dataset.timestamp);
+  if (rendered) el.textContent = rendered;
+});

@@ -29,6 +29,9 @@ def init_db():
     # queries — nullable + ON DELETE SET NULL since runs is a historical log,
     # not a pure join table (deleting a query shouldn't erase that it ran).
     _add_column_if_missing(conn, "runs", "query_id", "INTEGER REFERENCES queries(id) ON DELETE SET NULL")
+    # Optional per-folder color swatch (hex string from queries.FOLDER_COLORS),
+    # NULL meaning "no color set" — rendered as a neutral dot.
+    _add_column_if_missing(conn, "folders", "color", "TEXT")
     conn.commit()
     conn.close()
 

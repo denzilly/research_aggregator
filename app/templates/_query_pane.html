@@ -1,13 +1,15 @@
-<h2>Queries</h2>
-<ul class="query-list">
-  <li class="{{ 'active' if not active_query }}">
-    <a href="{{ url_for('main.deactivate_query') }}">All queries</a>
-  </li>
-  {% for q in queries %}
-  <li class="{{ 'active' if active_query and active_query.id == q.id }}">
-    <a href="{{ url_for('main.activate_query', query_id=q.id) }}">{{ q.name }}</a>
-  </li>
-  {% else %}
-  <li class="query-list-empty">No queries yet — <a href="{{ url_for('main.queries_page') }}">add one</a>.</li>
-  {% endfor %}
-</ul>
+<div class="sidebar-section">
+  <h3 class="sidebar-section-title">Queries</h3>
+  <ul class="sidebar-list">
+    <li class="sidebar-item {{ 'active' if not active_query }}">
+      <a href="{{ url_for('main.deactivate_query') }}"><span>All queries</span></a>
+    </li>
+    {% for q in queries %}
+    <li class="sidebar-item {{ 'active' if active_query and active_query.id == q.id }}">
+      <a href="{{ url_for('main.activate_query', query_id=q.id) }}"><span class="sidebar-item-name">{{ q.name }}</span></a>
+    </li>
+    {% else %}
+    <li class="sidebar-empty">No queries yet &mdash; <a href="{{ url_for('main.queries_page') }}">add one</a>.</li>
+    {% endfor %}
+  </ul>
+</div>

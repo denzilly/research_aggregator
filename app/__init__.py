@@ -30,7 +30,7 @@ def create_app():
     @app.context_processor
     def inject_folders():
         from app import queries
-        return {"folders": queries.list_folders(get_db())}
+        return {"folders": queries.list_folders(get_db()), "folder_colors": queries.FOLDER_COLORS}
 
     @app.context_processor
     def inject_queries():

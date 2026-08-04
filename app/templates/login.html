@@ -6,28 +6,15 @@
   <title>Sign in — phageDB</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/phage-icon.svg') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <style>
-    .login-shell {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    .login-card { width: 100%; max-width: 340px; }
-    .login-card .brand { font-size: 20px; margin-bottom: 4px; }
-    .login-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-    .login-card button { width: 100%; }
-  </style>
 </head>
 <body>
   <div class="login-shell">
     <div class="settings-block login-card">
-      <div class="brand">
-        <img src="{{ url_for('static', filename='img/phage-icon.svg') }}" alt="" class="brand-icon">
-        <span class="brand-text">phage<span>DB</span></span>
+      <div class="topbar-brand">
+        <span class="topbar-brand-mark"><img src="{{ url_for('static', filename='img/phage-icon.svg') }}" alt=""></span>
+        <span class="topbar-brand-text">Phage<span>DB</span></span>
       </div>
       <p class="hint">Enter the password to continue.</p>
       <form method="post">

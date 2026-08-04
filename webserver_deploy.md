@@ -257,6 +257,15 @@ Still applies as-is — see verification checklist below.
   same `python db.py` step, just worth knowing it's not purely
   `schema.sql`-driven anymore. `settings.keywords` was left in place
   (unused/frozen) rather than dropped, same reasoning as `is_favorite`.
+- **Folder color migration deploy order** — same requirement again:
+  the UI rework added an optional `folders.color` swatch (hex string from
+  `app/queries.py: FOLDER_COLORS`, editable via the pencil icon next to
+  "Folders"), added the same way as `runs.query_id` — a Python-level
+  `ALTER TABLE` in `db.py: init_db()`, since it's a column added to an
+  already-existing table. `folder.color` is read unconditionally on every
+  page (sidebar + paper cards), so run `docker compose run --rm
+  phage-digest python db.py` before deploying this app code, or every
+  page 500s with a missing-column error immediately.
 - **Real query keywords** — the migrated "Default" query still carries
   whatever the old placeholder keyword list was. Worth reviewing/renaming
   on the Queries page and splitting into separate named queries if the

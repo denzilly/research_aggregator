@@ -4,6 +4,12 @@ from datetime import datetime, timedelta, timezone
 import db
 from ingest.keywords import matches_keywords
 
+# Fixed palette for folder color swatches — kept in sync with FOLDER_COLORS in
+# app/static/js/app.js (used to render dots for folders created client-side)
+# and validated against server-side in routes.py so `folders.color` can only
+# ever hold one of these values or NULL.
+FOLDER_COLORS = ["#60a5fa", "#4ade80", "#fbbf24", "#f472b6", "#a78bfa", "#f87171", "#38bdf8", "#94a3b8"]
+
 
 def get_latest_run_batch(conn=None):
     """All `runs` rows from the most recent ingestion invocation. Before
@@ -101,12 +107,12 @@ def get_folder(folder_id, conn=None):
     return conn.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
 
 
-def create_folder(name: str, conn=None):
+def create_folder(name: str, color: str | None = None, conn=None):
     """Creates a folder and returns the new row (with paper_count=0), or None if the name is taken."""
     conn = conn or db.get_connection()
     try:
         cur = conn.execute(
-            "INSERT INTO folders (name, created_at) VALUES (?, datetime('now'))", (name,)
+            "INSERT INTO folders (name, color, created_at) VALUES (?, ?, datetime('now'))", (name, color)
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -116,11 +122,23 @@ def create_folder(name: str, conn=None):
     ).fetchone()
 
 
-def rename_folder(folder_id: int, name: str, conn=None):
-    """Returns True on success, False if the folder doesn't exist, None if the name is taken."""
+def update_folder(folder_id: int, name: str | None = None, color: str | None = None, conn=None):
+    """Partial update — only the fields passed (non-None) are changed. Returns
+    True on success, False if the folder doesn't exist, None if the new name
+    is already taken by another folder."""
     conn = conn or db.get_connection()
+    sets, params = [], []
+    if name is not None:
+        sets.append("name = ?")
+        params.append(name)
+    if color is not None:
+        sets.append("color = ?")
+        params.append(color)
+    if not sets:
+        return True
+    params.append(folder_id)
     try:
-        cur = conn.execute("UPDATE folders SET name = ? WHERE id = ?", (name, folder_id))
+        cur = conn.execute(f"UPDATE folders SET {', '.join(sets)} WHERE id = ?", params)
         conn.commit()
     except sqlite3.IntegrityError:
         return None

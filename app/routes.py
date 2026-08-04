@@ -132,6 +132,21 @@ def search():
     )
 
 
+def _validated_color(payload):
+    """Returns the requested color if it's in the fixed palette, None if the
+    field was omitted, or raises 400 — folder.color only ever renders as a raw
+    CSS value, so it's validated against the known swatches server-side too,
+    not just constrained by the <select>-like UI on the client."""
+    if "color" not in payload:
+        return None
+    color = payload.get("color")
+    if color is None:
+        return None
+    if color not in queries.FOLDER_COLORS:
+        abort(400)
+    return color
+
+
 @bp.route("/folders", methods=["POST"])
 @require_write_secret
 def create_folder():
@@ -140,7 +155,8 @@ def create_folder():
     name = (payload.get("name") or request.form.get("name") or "").strip()
     if not name:
         abort(400)
-    folder = queries.create_folder(name, conn)
+    color = _validated_color(payload)
+    folder = queries.create_folder(name, color, conn)
     if folder is None:
         return jsonify({"error": "A folder with that name already exists."}), 409
     return jsonify(dict(folder)), 201
@@ -151,15 +167,20 @@ def create_folder():
 def rename_folder(folder_id):
     conn = get_db()
     payload = request.get_json(silent=True) or {}
-    name = (payload.get("name") or request.form.get("name") or "").strip()
-    if not name:
+    name = payload.get("name")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            abort(400)
+    color = _validated_color(payload)
+    if name is None and color is None:
         abort(400)
-    result = queries.rename_folder(folder_id, name, conn)
+    result = queries.update_folder(folder_id, name=name, color=color, conn=conn)
     if result is None:
         return jsonify({"error": "A folder with that name already exists."}), 409
     if result is False:
         abort(404)
-    return jsonify({"id": folder_id, "name": name})
+    return jsonify({"id": folder_id, "name": name, "color": color})
 
 
 @bp.route("/folders/<int:folder_id>", methods=["DELETE"])
