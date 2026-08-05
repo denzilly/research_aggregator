@@ -582,12 +582,13 @@ button, .btn {
   cursor: pointer;
 }
 button:hover { filter: brightness(1.08); }
-button.ghost {
+.ghost {
   background: transparent;
   color: var(--on-surface-variant);
   border: 1px solid var(--outline);
 }
-button.ghost:hover { border-color: var(--primary); color: var(--primary); }
+.ghost:hover { border-color: var(--primary); color: var(--primary); }
+a.btn { display: inline-block; text-decoration: none; }
 
 /* ---------------------------------------------------------------- */
 /* Feed / paper rows */

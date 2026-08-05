@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Connecting Zotero&hellip; — phageDB</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family: system-ui, sans-serif; padding: 40px 20px; text-align: center; color: #333;">
+  {% if error %}
+    <p>{{ error }}</p>
+    <p><a href="{{ url_for('main.settings') }}">Back to Settings</a></p>
+  {% else %}
+    <p>Connected to Zotero as {{ username or "your account" }} &mdash; redirecting&hellip;</p>
+    <p><a href="{{ url_for('main.settings') }}">Continue</a> if this doesn't happen automatically.</p>
+    <script>
+      // Same localStorage shape/key the manual-API-key path writes
+      // (app/static/js/app.js: setZoteroConnection) — the Settings page's
+      // existing render logic picks this up with no changes needed.
+      localStorage.setItem("phage_digest_zotero", JSON.stringify({
+        key: {{ key|tojson }},
+        userID: {{ user_id|tojson }},
+        username: {{ username|tojson }},
+      }));
+      window.location.replace({{ url_for('main.settings')|tojson }});
+    </script>
+  {% endif %}
+</body>
+</html>
