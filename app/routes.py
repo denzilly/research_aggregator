@@ -280,6 +280,15 @@ def deactivate_query():
     return redirect(_safe_referrer() or url_for("main.digest"))
 
 
+def _run_log_context(conn):
+    runs = queries.list_recent_runs(conn=conn)
+    known_costs = [r["cost_usd"] for r in runs if r["cost_usd"] is not None]
+    return {
+        "runs": runs,
+        "runs_total_cost": sum(known_costs) if known_costs else None,
+    }
+
+
 @bp.route("/settings", methods=["GET"])
 def settings():
     conn = get_db()
@@ -287,6 +296,7 @@ def settings():
         "settings.html",
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
+        **_run_log_context(conn),
     )
 
 
@@ -302,5 +312,6 @@ def run_now():
         "settings.html",
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
+        **_run_log_context(conn),
         triggered=True,
     )

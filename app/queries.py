@@ -26,6 +26,31 @@ def get_latest_run_batch(conn=None):
     ).fetchall()
 
 
+RUN_LOG_LIMIT = 50
+
+
+def list_recent_runs(limit=RUN_LOG_LIMIT, conn=None):
+    """Most recent completed-or-failed runs (one per query per invocation),
+    newest first, for the Settings page run log. `query_name` is NULL for a
+    run whose query has since been deleted (runs.query_id is ON DELETE SET
+    NULL — a historical log entry, not a pure join row) — the template
+    labels those "Deleted query" rather than dropping them."""
+    conn = conn or db.get_connection()
+    return conn.execute(
+        """
+        SELECT runs.id, runs.started_at, runs.finished_at, runs.status,
+               runs.new_papers_count, runs.error_message, runs.cost_usd,
+               queries.name AS query_name
+        FROM runs
+        LEFT JOIN queries ON queries.id = runs.query_id
+        WHERE runs.status != 'running'
+        ORDER BY runs.started_at DESC, runs.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 DIGEST_WINDOW_DAYS = 7
 
 # Digest time-range filter options, in display order. None means no cutoff ("all").

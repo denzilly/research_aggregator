@@ -161,7 +161,7 @@ def run() -> int:
                 all_papers = pubmed_papers + biorxiv_papers
                 new_papers = _dedupe_against_db(conn, all_papers)
 
-                scores = score_and_summarize(new_papers, keywords) if new_papers else {}
+                scores, cost = score_and_summarize(new_papers, keywords) if new_papers else ({}, 0.0)
                 _insert_papers(conn, new_papers, scores)
                 # Link the *entire* fetched set, not just the new subset — a
                 # paper this query re-discovers (already ingested by an
@@ -170,8 +170,8 @@ def run() -> int:
                 _associate_with_query(conn, [p["id"] for p in all_papers], query_id)
 
                 conn.execute(
-                    "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ? WHERE id = ?",
-                    (_now_iso(), len(new_papers), run_id),
+                    "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ?, cost_usd = ? WHERE id = ?",
+                    (_now_iso(), len(new_papers), cost, run_id),
                 )
                 conn.commit()
 

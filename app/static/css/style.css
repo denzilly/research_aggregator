@@ -848,6 +848,44 @@ button.ghost:hover { border-color: var(--primary); color: var(--primary); }
 .settings-block textarea { width: 100%; min-height: 80px; resize: vertical; }
 .settings-actions { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
 
+.run-log {
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.run-log-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr 0.8fr 0.9fr 0.8fr;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--outline);
+}
+.run-log-row:last-child { border-bottom: none; }
+.run-log-header {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--on-surface-faint);
+  background: var(--surface-panel);
+  position: sticky;
+  top: 0;
+}
+.run-log-status { display: flex; align-items: center; gap: 5px; }
+.run-log-status .dot { width: 6px; height: 6px; border-radius: var(--radius-full); flex-shrink: 0; }
+.run-log-status-ok .dot { background: var(--success); }
+.run-log-status-error .dot { background: var(--error); }
+.run-log-error {
+  padding: 0 10px 7px 10px;
+  margin-top: -7px;
+  font-size: 10px;
+  color: var(--error);
+  border-bottom: 1px solid var(--outline);
+}
+.run-log-error:last-child { border-bottom: none; }
+
 /* ---------------------------------------------------------------- */
 /* Login */
 

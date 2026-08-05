@@ -266,6 +266,13 @@ Still applies as-is — see verification checklist below.
   page (sidebar + paper cards), so run `docker compose run --rm
   phage-digest python db.py` before deploying this app code, or every
   page 500s with a missing-column error immediately.
+- **Run log cost migration deploy order** — same requirement again: the
+  Settings run log added a `runs.cost_usd` column (approx per-run OpenRouter
+  spend), added the same way as `runs.query_id`/`folders.color` — a
+  Python-level `ALTER TABLE` in `db.py: init_db()`. Only `/settings` reads it,
+  so a missed migration is scoped to that page 500ing rather than
+  site-wide, but still run `docker compose run --rm phage-digest python
+  db.py` before deploying this app code.
 - **Real query keywords** — the migrated "Default" query still carries
   whatever the old placeholder keyword list was. Worth reviewing/renaming
   on the Queries page and splitting into separate named queries if the
