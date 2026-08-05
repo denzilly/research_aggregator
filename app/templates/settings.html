@@ -41,4 +41,26 @@
       </div>
     </div>
   </div>
+
+  <div class="settings-block">
+    <h2>Zotero</h2>
+    <p class="hint">
+      Connect your Zotero account to add papers to your library with one click. Create a
+      personal API key with library read/write access at
+      <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a>,
+      then paste it below. Stored only in this browser's local storage — sent straight to
+      Zotero's API, never to this server.
+    </p>
+    <div class="field-group" data-zotero-connect-form>
+      <input type="password" id="zotero-key-input" placeholder="Zotero API key">
+      <div class="settings-actions">
+        <button type="button" class="ghost" id="connect-zotero">Connect</button>
+        <span class="flash-error" data-zotero-error hidden></span>
+      </div>
+    </div>
+    <div class="settings-actions" data-zotero-connected hidden>
+      <span class="hint">Connected to Zotero as <strong data-zotero-username></strong>.</span>
+      <button type="button" class="ghost" id="disconnect-zotero">Disconnect</button>
+    </div>
+  </div>
 {% endblock %}

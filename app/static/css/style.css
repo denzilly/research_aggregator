@@ -692,6 +692,8 @@ button.ghost:hover { border-color: var(--primary); color: var(--primary); }
 .row-action-btn:hover { background: var(--surface-raised); color: var(--primary); }
 .row-action-btn.has-folders { color: var(--primary); }
 .row-action-btn.has-folders .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+.row-action-btn.in-zotero { color: var(--primary); }
+.row-action-btn.in-zotero .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
 
 .save-wrap { position: relative; }
 
@@ -821,6 +823,7 @@ button.ghost:hover { border-color: var(--primary); color: var(--primary); }
 }
 .query-card-actions .field-group { flex: 1; min-width: 160px; }
 .flash { font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--success); }
+.flash-error { font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--error); }
 
 .add-query-block {
   background: var(--surface-panel);
