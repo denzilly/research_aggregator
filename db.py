@@ -29,6 +29,11 @@ def init_db():
     # queries — nullable + ON DELETE SET NULL since runs is a historical log,
     # not a pure join table (deleting a query shouldn't erase that it ran).
     _add_column_if_missing(conn, "runs", "query_id", "INTEGER REFERENCES queries(id) ON DELETE SET NULL")
+    # Approx USD cost of that run's OpenRouter scoring calls (see
+    # ingest/scoring.py), summed across its batches. NULL on runs from
+    # before this column existed, and on error runs where scoring never
+    # ran — the Settings run log renders both as "—", not "$0.0000".
+    _add_column_if_missing(conn, "runs", "cost_usd", "REAL")
     # Optional per-folder color swatch (hex string from queries.FOLDER_COLORS),
     # NULL meaning "no color set" — rendered as a neutral dot.
     _add_column_if_missing(conn, "folders", "color", "TEXT")

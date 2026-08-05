@@ -62,6 +62,18 @@
         <span class="material-symbols-outlined">format_quote</span>
         <span data-cite-label>Cite</span>
       </button>
+      <button type="button" class="row-action-btn" data-zotero-btn
+              data-paper-id="{{ paper.id }}"
+              data-title="{{ paper.title }}"
+              data-authors="{{ paper.authors or '' }}"
+              data-date="{{ paper.published_date or '' }}"
+              data-url="{{ paper.url or '' }}"
+              data-abstract="{{ paper.summary or paper.abstract or '' }}"
+              data-source="{{ paper.source }}"
+              title="Add to Zotero">
+        <span class="material-symbols-outlined">library_add</span>
+        <span data-zotero-label>Zotero</span>
+      </button>
     </div>
   </div>
 </article>

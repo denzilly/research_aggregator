@@ -421,6 +421,169 @@ document.querySelectorAll("[data-cite-btn]").forEach((btn) => {
   });
 });
 
+// ---- Zotero ----
+//
+// Connection lives entirely in this browser's local storage and requests go
+// straight from here to api.zotero.org (CORS-enabled from any origin) — the
+// server never sees the Zotero key, same trust model as the write secret.
+
+const ZOTERO_CONN_KEY = "phage_digest_zotero";
+const ZOTERO_ADDED_KEY = "phage_digest_zotero_added";
+
+function getZoteroConnection() {
+  try {
+    return JSON.parse(localStorage.getItem(ZOTERO_CONN_KEY) || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function setZoteroConnection(conn) {
+  if (conn) localStorage.setItem(ZOTERO_CONN_KEY, JSON.stringify(conn));
+  else localStorage.removeItem(ZOTERO_CONN_KEY);
+}
+
+function getZoteroAdded() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(ZOTERO_ADDED_KEY) || "[]"));
+  } catch (err) {
+    return new Set();
+  }
+}
+
+function markZoteroAdded(paperId) {
+  const added = getZoteroAdded();
+  added.add(paperId);
+  localStorage.setItem(ZOTERO_ADDED_KEY, JSON.stringify([...added]));
+}
+
+function renderZoteroConnectUI() {
+  const connectForm = document.querySelector("[data-zotero-connect-form]");
+  const connected = document.querySelector("[data-zotero-connected]");
+  if (!connectForm || !connected) return;
+  const conn = getZoteroConnection();
+  connectForm.hidden = !!conn;
+  connected.hidden = !conn;
+  if (conn) connected.querySelector("[data-zotero-username]").textContent = conn.username;
+}
+renderZoteroConnectUI();
+
+const connectZoteroBtn = document.getElementById("connect-zotero");
+if (connectZoteroBtn) {
+  connectZoteroBtn.addEventListener("click", async () => {
+    const input = document.getElementById("zotero-key-input");
+    const errorEl = document.querySelector("[data-zotero-error]");
+    const key = input.value.trim();
+    errorEl.hidden = true;
+    if (!key) return;
+    connectZoteroBtn.disabled = true;
+    connectZoteroBtn.textContent = "Connecting…";
+    try {
+      const resp = await fetch(`https://api.zotero.org/keys/${encodeURIComponent(key)}`);
+      if (!resp.ok) throw new Error("That key couldn't be verified.");
+      const info = await resp.json();
+      if (!info.access || !info.access.user || !info.access.user.library) {
+        throw new Error("That key doesn't have library access — create one with read/write access.");
+      }
+      setZoteroConnection({ key, userID: info.userID, username: info.username });
+      input.value = "";
+      renderZoteroConnectUI();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+    } finally {
+      connectZoteroBtn.disabled = false;
+      connectZoteroBtn.textContent = "Connect";
+    }
+  });
+}
+
+const disconnectZoteroBtn = document.getElementById("disconnect-zotero");
+if (disconnectZoteroBtn) {
+  disconnectZoteroBtn.addEventListener("click", () => {
+    setZoteroConnection(null);
+    renderZoteroConnectUI();
+  });
+}
+
+const ZOTERO_LIBRARY_CATALOG = { pubmed: "PubMed", biorxiv: "bioRxiv", medrxiv: "medRxiv" };
+
+function splitAuthorsToCreators(raw) {
+  return (raw || "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => ({ creatorType: "author", name }));
+}
+
+function extractDOI(url) {
+  const match = (url || "").match(/10\.\d{4,9}\/\S+/);
+  return match ? match[0].replace(/[.,;]+$/, "") : null;
+}
+
+function buildZoteroItem(btn) {
+  const { title, authors, date, url, abstract, source } = btn.dataset;
+  const item = {
+    itemType: source === "biorxiv" || source === "medrxiv" ? "preprint" : "journalArticle",
+    title,
+    creators: splitAuthorsToCreators(authors),
+    abstractNote: abstract || "",
+    date: date || "",
+    url: url || "",
+    accessDate: new Date().toISOString().slice(0, 10),
+    libraryCatalog: ZOTERO_LIBRARY_CATALOG[source] || source,
+  };
+  const doi = extractDOI(url);
+  if (doi) item.DOI = doi;
+  return item;
+}
+
+function markZoteroBtnAdded(btn) {
+  btn.classList.add("in-zotero");
+  btn.querySelector(".material-symbols-outlined").textContent = "check_circle";
+  btn.querySelector("[data-zotero-label]").textContent = "In Zotero";
+}
+
+const zoteroAdded = getZoteroAdded();
+document.querySelectorAll("[data-zotero-btn]").forEach((btn) => {
+  if (zoteroAdded.has(btn.dataset.paperId)) markZoteroBtnAdded(btn);
+
+  btn.addEventListener("click", async () => {
+    const conn = getZoteroConnection();
+    if (!conn) {
+      alert("Connect your Zotero account in Settings first.");
+      return;
+    }
+    const label = btn.querySelector("[data-zotero-label]");
+    const original = label.textContent;
+    btn.disabled = true;
+    label.textContent = "Adding…";
+    try {
+      const resp = await fetch(`https://api.zotero.org/users/${conn.userID}/items`, {
+        method: "POST",
+        headers: {
+          "Zotero-API-Key": conn.key,
+          "Content-Type": "application/json",
+          "Zotero-Write-Token": crypto.randomUUID().replace(/-/g, ""),
+        },
+        body: JSON.stringify([buildZoteroItem(btn)]),
+      });
+      const result = await resp.json().catch(() => ({}));
+      if (!resp.ok || !result.success || !Object.keys(result.success).length) {
+        const failure = result.failed && result.failed["0"];
+        throw new Error((failure && failure.message) || `Request failed: ${resp.status}`);
+      }
+      markZoteroBtnAdded(btn);
+      markZoteroAdded(btn.dataset.paperId);
+    } catch (err) {
+      label.textContent = original;
+      alert(`Couldn't add to Zotero: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+
 // ---- Relative timestamps ----
 
 function timeAgo(iso) {

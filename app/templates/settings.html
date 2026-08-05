@@ -25,6 +25,46 @@
   </div>
 
   <div class="settings-block">
+    <h2>Query run log</h2>
+    {% if runs %}
+      <p class="hint">
+        Last {{ runs|length }} completed run{{ "" if runs|length == 1 else "s" }} across all queries.
+        {% if runs_total_cost is not none %}
+          ${{ "%.4f"|format(runs_total_cost) }} of OpenRouter spend shown below (approximate —
+          a batch that errors out before a response comes back isn't counted).
+        {% else %}
+          Cost tracking starts with the next run — all of these predate it.
+        {% endif %}
+      </p>
+      <div class="run-log">
+        <div class="run-log-row run-log-header">
+          <span>Query</span>
+          <span>Finished</span>
+          <span>Status</span>
+          <span>New papers</span>
+          <span>Cost</span>
+        </div>
+        {% for run in runs %}
+        <div class="run-log-row">
+          <span>{{ run.query_name or "Deleted query" }}</span>
+          <span>{{ (run.finished_at or run.started_at)[:16] | replace("T", " ") }}</span>
+          <span class="run-log-status run-log-status-{{ run.status }}">
+            <span class="dot"></span>{{ "Failed" if run.status == "error" else "OK" }}
+          </span>
+          <span>{{ run.new_papers_count if run.new_papers_count is not none else "—" }}</span>
+          <span>{{ "$%.4f"|format(run.cost_usd) if run.cost_usd is not none else "—" }}</span>
+        </div>
+        {% if run.status == "error" and run.error_message %}
+        <div class="run-log-error">{{ run.error_message }}</div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="hint">No completed runs yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="settings-block">
     <h2>Write secret</h2>
     <p class="hint">
       {% if write_secret_configured %}
@@ -39,6 +79,28 @@
       <div class="settings-actions">
         <button type="button" class="ghost" id="save-write-secret">Save in this browser</button>
       </div>
+    </div>
+  </div>
+
+  <div class="settings-block">
+    <h2>Zotero</h2>
+    <p class="hint">
+      Connect your Zotero account to add papers to your library with one click. Create a
+      personal API key with library read/write access at
+      <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a>,
+      then paste it below. Stored only in this browser's local storage — sent straight to
+      Zotero's API, never to this server.
+    </p>
+    <div class="field-group" data-zotero-connect-form>
+      <input type="password" id="zotero-key-input" placeholder="Zotero API key">
+      <div class="settings-actions">
+        <button type="button" class="ghost" id="connect-zotero">Connect</button>
+        <span class="flash-error" data-zotero-error hidden></span>
+      </div>
+    </div>
+    <div class="settings-actions" data-zotero-connected hidden>
+      <span class="hint">Connected to Zotero as <strong data-zotero-username></strong>.</span>
+      <button type="button" class="ghost" id="disconnect-zotero">Disconnect</button>
     </div>
   </div>
 {% endblock %}

@@ -54,7 +54,7 @@ def _parse_response_content(content: str) -> dict[str, dict]:
     return result
 
 
-def _call_openrouter(batch: list[dict], keywords: list[str]) -> dict[str, dict]:
+def _call_openrouter(batch: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
     # Note: OpenRouter/deepseek's `response_format: json_object` mode forces
     # a top-level JSON *object*, incompatible with the top-level array this
     # prompt asks for — deliberately not used here. Plain prompting + a
@@ -83,32 +83,42 @@ def _call_openrouter(batch: list[dict], keywords: list[str]) -> dict[str, dict]:
         timeout=REQUEST_TIMEOUT,
     )
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
-    return _parse_response_content(content)
+    body = resp.json()
+    content = body["choices"][0]["message"]["content"]
+    # OpenRouter includes exact per-request cost (USD) in every response's
+    # `usage` field by default — this is what backs the per-run cost shown
+    # in the Settings run log. Only counted on a response we actually got
+    # back and parsed below; a batch that errors out before we get here
+    # (network failure, non-2xx) contributes nothing, so the total is a
+    # floor, not an exact figure, on the rare batch that fails outright.
+    cost = (body.get("usage") or {}).get("cost") or 0.0
+    return _parse_response_content(content), cost
 
 
-def _score_batch(batch: list[dict], keywords: list[str]) -> dict[str, dict]:
+def _score_batch(batch: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
     for _ in range(MAX_ATTEMPTS):
         try:
             return _call_openrouter(batch, keywords)
         except Exception:
             continue
-    return {}
+    return {}, 0.0
 
 
-def score_and_summarize(papers: list[dict], keywords: list[str]) -> dict[str, dict]:
-    """Returns {paper_id: {"relevance_score": float|None, "summary": str|None}}.
+def score_and_summarize(papers: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
+    """Returns ({paper_id: {"relevance_score": float|None, "summary": str|None}}, total_cost_usd).
     Papers the model fails to score (batch error, or the model omitted an id)
     still get an entry with None values so ingestion writes the row rather
     than dropping the paper."""
     results: dict[str, dict] = {}
+    total_cost = 0.0
 
     for i in range(0, len(papers), BATCH_SIZE):
         batch = papers[i:i + BATCH_SIZE]
-        batch_results = _score_batch(batch, keywords)
+        batch_results, batch_cost = _score_batch(batch, keywords)
+        total_cost += batch_cost
         for paper in batch:
             results[paper["id"]] = batch_results.get(
                 paper["id"], {"relevance_score": None, "summary": None}
             )
 
-    return results
+    return results, total_cost
