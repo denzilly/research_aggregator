@@ -58,7 +58,10 @@ function closeAllPopovers(except) {
   document.querySelectorAll("[data-save-popover], [data-folder-manage-popover]").forEach((pop) => {
     if (pop !== except) {
       pop.hidden = true;
-      const btn = pop.previousElementSibling;
+      // The folder-manage popover is reparented to <body> on open (see
+      // below), so it no longer has its trigger button as a DOM sibling —
+      // _ownerButton is set once, at bind time, so this still finds it.
+      const btn = pop._ownerButton || pop.previousElementSibling;
       if (btn) btn.setAttribute("aria-expanded", "false");
     }
   });
@@ -76,12 +79,25 @@ document.querySelectorAll("[data-save-btn]").forEach((btn) => {
 });
 
 document.querySelectorAll("[data-folder-manage-btn]").forEach((btn) => {
+  const popover = btn.nextElementSibling;
+  popover._ownerButton = btn;
+
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const popover = btn.nextElementSibling;
     const opening = popover.hidden;
     closeAllPopovers(opening ? popover : null);
     if (opening) {
+      // Reparented to <body> (once) rather than left nested in the
+      // sidebar: some browsers were compositing this fixed-positioned
+      // popover *behind* main-column content (paper cards) once it
+      // visually overlapped them on narrower windows — background/z-index
+      // were correct on paper (verified via computed styles), so this was
+      // a paint-order bug tied to its position in the sidebar's DOM
+      // subtree, not a CSS value. Moving it out sidesteps that subtree
+      // entirely instead of fighting it with more z-index/layer hints.
+      if (popover.parentElement !== document.body) {
+        document.body.appendChild(popover);
+      }
       // Fixed-positioned (not CSS-anchored) because the sidebar scrolls
       // (overflow-y: auto for its sticky behavior), which would otherwise
       // clip an absolutely-positioned popover. Clamped to the viewport so it
@@ -101,7 +117,11 @@ document.querySelectorAll("[data-folder-manage-btn]").forEach((btn) => {
 });
 
 document.addEventListener("click", (e) => {
-  if (!e.target.closest("[data-save-wrap]") && !e.target.closest("[data-folder-manage-wrap]")) {
+  if (
+    !e.target.closest("[data-save-wrap]") &&
+    !e.target.closest("[data-folder-manage-wrap]") &&
+    !e.target.closest("[data-folder-manage-popover]") // reparented to <body>, so no longer inside the wrap above
+  ) {
     closeAllPopovers();
   }
 });
