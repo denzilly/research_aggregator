@@ -352,6 +352,12 @@ a:hover { text-decoration: underline; }
   max-height: 260px;
   overflow-y: auto;
   margin-bottom: 14px;
+  /* Without this, a swatch row sitting flush against the list's own edge
+     (always true of the last folder's row, and the first's on scroll) has
+     its .selected ring clipped — the ring is a box-shadow, which extends
+     2px past the swatch's own box, and overflow-y: auto clips anything
+     past this container's edge with zero headroom otherwise. */
+  padding: 3px;
 }
 .folder-manage-item + .folder-manage-item {
   padding-top: 10px;

@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 
 from flask import Flask, g, redirect, request, session, url_for
@@ -28,6 +29,26 @@ def create_app():
         conn = g.pop("db_conn", None)
         if conn is not None:
             conn.close()
+
+    @app.context_processor
+    def inject_static_url():
+        # Cache-busts static assets against the CDN/browser (research.btblog.dev
+        # sits behind Cloudflare, which was independently caching style.css for
+        # up to 4 hours past a deploy — this appends the file's on-disk mtime
+        # as a query string so its URL actually changes when the file does).
+        # Docker's `COPY . .` resets mtimes to build time regardless of
+        # whether a given file changed, so every rebuilt image bumps every
+        # asset's version — a little more aggressive than strictly necessary,
+        # but simple and correct, and cheap at this app's asset count.
+        def static_url(filename):
+            path = os.path.join(app.static_folder, filename)
+            try:
+                version = int(os.path.getmtime(path))
+            except OSError:
+                version = 0
+            return f"{url_for('static', filename=filename)}?v={version}"
+
+        return {"static_url": static_url}
 
     @app.context_processor
     def inject_auth_flag():
