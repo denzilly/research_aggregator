@@ -847,6 +847,7 @@ a.btn { display: inline-block; text-decoration: none; }
 }
 .settings-block h2 { font-size: 13px; margin: 0 0 4px; color: var(--on-surface); }
 .settings-block .hint { font-size: 11px; color: var(--on-surface-variant); margin: 0 0 12px; }
+.settings-actions .hint { margin: 0; }
 .settings-block textarea { width: 100%; min-height: 80px; resize: vertical; }
 .settings-actions { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
 
