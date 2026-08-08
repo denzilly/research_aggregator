@@ -1,32 +1,7 @@
-const WRITE_SECRET_KEY = "phage_digest_write_secret";
-
 // Kept in sync with FOLDER_COLORS in app/queries.py — used when rendering
 // folders created client-side (the manage-folders popover's "new folder"
 // swatches are server-rendered from that same list already).
 const FOLDER_COLORS = ["#60a5fa", "#4ade80", "#fbbf24", "#f472b6", "#a78bfa", "#f87171", "#38bdf8", "#94a3b8"];
-
-function getWriteSecret() {
-  return localStorage.getItem(WRITE_SECRET_KEY) || "";
-}
-
-document.querySelectorAll("[data-write-secret-field]").forEach((el) => {
-  el.value = getWriteSecret();
-});
-
-const saveSecretBtn = document.getElementById("save-write-secret");
-if (saveSecretBtn) {
-  const input = document.getElementById("write-secret-input");
-  input.value = getWriteSecret();
-  saveSecretBtn.addEventListener("click", () => {
-    localStorage.setItem(WRITE_SECRET_KEY, input.value);
-    saveSecretBtn.textContent = "Saved";
-    setTimeout(() => (saveSecretBtn.textContent = "Save in this browser"), 1500);
-  });
-}
-
-function writeSecretHeaders(extra) {
-  return Object.assign({ "X-Write-Secret": getWriteSecret() }, extra || {});
-}
 
 // ---- Mobile off-canvas drawer (Queries / Folders / nav, behind the hamburger) ----
 
@@ -157,14 +132,14 @@ function checkboxChangeHandler(checkbox) {
     try {
       const resp = await fetch(
         `/papers/${encodeURIComponent(paperId)}/folders/${folderId}`,
-        { method, headers: writeSecretHeaders() }
+        { method }
       );
       if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
       updateSaveButtonState(wrap);
       bumpFolderCount(folderId, checkbox.checked ? 1 : -1);
     } catch (err) {
       checkbox.checked = !checkbox.checked;
-      alert("Couldn't update folder — check your write secret in Settings.");
+      alert("Couldn't update folder.");
     } finally {
       checkbox.disabled = false;
     }
@@ -254,7 +229,7 @@ function bindFolderRenameInput(input) {
     try {
       const resp = await fetch(`/folders/${folderId}`, {
         method: "PATCH",
-        headers: writeSecretHeaders({ "Content-Type": "application/json" }),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
       if (resp.status === 409) {
@@ -267,7 +242,7 @@ function bindFolderRenameInput(input) {
         el.textContent = name;
       });
     } catch (err) {
-      alert("Couldn't rename folder — check your write secret in Settings.");
+      alert("Couldn't rename folder.");
       input.value = current;
     }
   };
@@ -287,7 +262,7 @@ function bindColorSwatch(btn) {
     try {
       const resp = await fetch(`/folders/${folderId}`, {
         method: "PATCH",
-        headers: writeSecretHeaders({ "Content-Type": "application/json" }),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ color }),
       });
       if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
@@ -299,7 +274,7 @@ function bindColorSwatch(btn) {
         dot.style.backgroundColor = color;
       });
     } catch (err) {
-      alert("Couldn't update folder color — check your write secret in Settings.");
+      alert("Couldn't update folder color.");
     }
   });
 }
@@ -310,10 +285,7 @@ function bindFolderDeleteButton(btn) {
     const name = document.querySelector(`[data-folder-name-label="${folderId}"]`).textContent;
     if (!confirm(`Delete "${name}"? Papers inside it won't be deleted.`)) return;
     try {
-      const resp = await fetch(`/folders/${folderId}`, {
-        method: "DELETE",
-        headers: writeSecretHeaders(),
-      });
+      const resp = await fetch(`/folders/${folderId}`, { method: "DELETE" });
       if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
       document.querySelectorAll(`[data-folder-list-item="${folderId}"]`).forEach((el) => el.remove());
       document.querySelectorAll(`[data-folder-checkbox][value="${folderId}"]`).forEach((checkbox) => {
@@ -326,7 +298,7 @@ function bindFolderDeleteButton(btn) {
         window.location.href = "/search";
       }
     } catch (err) {
-      alert("Couldn't delete folder — check your write secret in Settings.");
+      alert("Couldn't delete folder.");
     }
   });
 }
@@ -364,7 +336,7 @@ function addFolderEverywhere(folder, originWrap) {
 async function createFolder(name, color) {
   const resp = await fetch("/folders", {
     method: "POST",
-    headers: writeSecretHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, color: color || null }),
   });
   if (resp.status === 409) {
@@ -372,7 +344,7 @@ async function createFolder(name, color) {
     return null;
   }
   if (!resp.ok) {
-    alert("Couldn't create folder — check your write secret in Settings.");
+    alert("Couldn't create folder.");
     return null;
   }
   return resp.json();
@@ -395,7 +367,6 @@ document.querySelectorAll("[data-new-folder-form]").forEach((form) => {
       try {
         await fetch(`/papers/${encodeURIComponent(card.dataset.paperId)}/folders/${folder.id}`, {
           method: "PUT",
-          headers: writeSecretHeaders(),
         });
         bumpFolderCount(folder.id, 1);
         const checkbox = wrap.querySelector(`[data-folder-checkbox][value="${folder.id}"]`);
@@ -445,7 +416,7 @@ document.querySelectorAll("[data-cite-btn]").forEach((btn) => {
 //
 // Connection lives entirely in this browser's local storage and requests go
 // straight from here to api.zotero.org (CORS-enabled from any origin) — the
-// server never sees the Zotero key, same trust model as the write secret.
+// server never sees the Zotero key.
 
 const ZOTERO_CONN_KEY = "phage_digest_zotero";
 const ZOTERO_ADDED_KEY = "phage_digest_zotero_added";
