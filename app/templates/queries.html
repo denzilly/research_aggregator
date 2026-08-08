@@ -14,7 +14,6 @@
     </summary>
     <div class="query-card-body">
       <form method="post" action="{{ url_for('main.update_query', query_id=q.id) }}">
-        <input type="hidden" name="secret" data-write-secret-field>
         <div class="field-group" style="margin-bottom: 12px;">
           <label for="name-{{ q.id }}">Name</label>
           <input type="text" id="name-{{ q.id }}" name="name" value="{{ q.name }}">
@@ -28,7 +27,6 @@
       </form>
       <form method="post" action="{{ url_for('main.delete_query', query_id=q.id) }}" style="margin-top: 10px;"
             onsubmit="return confirm('Delete &quot;{{ q.name }}&quot;? Its papers stay in the archive, just no longer grouped under this query.');">
-        <input type="hidden" name="secret" data-write-secret-field>
         <button type="submit" class="ghost">Delete query</button>
       </form>
     </div>
@@ -39,7 +37,6 @@
   <div class="add-query-block">
     <h2>New query</h2>
     <form method="post" action="{{ url_for('main.create_query') }}">
-      <input type="hidden" name="secret" data-write-secret-field>
       <div class="field-group" style="margin-bottom: 12px;">
         <label for="new-name">Name</label>
         <input type="text" id="new-name" name="name" placeholder="e.g. Phage therapy">

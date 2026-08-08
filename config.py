@@ -14,8 +14,6 @@ NCBI_API_KEY = os.environ.get("NCBI_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 
-WRITE_SECRET = os.environ.get("WRITE_SECRET", "")
-
 # Zotero OAuth 1.0a "Login with Zotero" — from registering an app at
 # zotero.org/oauth/apps. Optional: when unset, Settings only offers the
 # manual API-key connect path (app/static/js/app.js), which needs neither.

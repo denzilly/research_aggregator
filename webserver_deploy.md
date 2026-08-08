@@ -64,17 +64,16 @@ correct the original plan:
   state re-fetches since the last successful run with a 1-day overlap
   (`OVERLAP_DAYS`) to catch late-indexed papers. Dedupe by id makes the
   overlap free.
-- **Write endpoints** (folder create/rename/delete, saving papers to
-  folders, query create/rename/delete, run-now) are gated by
-  `WRITE_SECRET`: requests must include it via `X-Write-Secret`
-  header or `secret` form/query field. The web UI stores it in the
-  browser's localStorage once entered on the Settings page. Selecting
-  which query you're viewing (a session-scoped preference, not a shared
-  mutation) is **not** write-secret-gated — same trust level as being
-  logged in at all.
-- **Whole-site password gate added post-deployment**, on top of (not
-  instead of) `WRITE_SECRET` — see "Deviation: auth" below. This
-  supersedes project.md's "no auth system" non-goal.
+- **Whole-site password gate added post-deployment** — see "Deviation:
+  auth" below. This supersedes project.md's "no auth system" non-goal.
+  Write endpoints (folder create/rename/delete, saving papers to folders,
+  query create/rename/delete, run-now) originally had a second,
+  independent `WRITE_SECRET` gate on top of this (2026-08, since
+  removed — see "Deviation: removed WRITE_SECRET" below): with only one
+  trusted user behind `SITE_PASSWORD` and OpenRouter's own rate limiting
+  already bounding the cost of a compromised session, the second secret
+  was pure friction (re-entering it in every new browser) for no real
+  marginal protection.
 - **`ingest/backfill_scores.py`** is a standalone maintenance script for
   scoring any papers with a null `relevance_score` (e.g. if the OpenRouter
   key was missing/broken during a run). Safe to re-run any time.
@@ -146,15 +145,35 @@ system" non-goal. Two new env vars:
 - `SITE_PASSWORD` — if set, every page requires a password before
   anything renders (`/login`, `/logout`, static assets are exempt).
   Session cookie lasts 30 days. If left empty, the gate is disabled
-  entirely (matches the existing `WRITE_SECRET` "empty = open" pattern).
-- `SECRET_KEY` — signs the Flask session cookie. Required whenever
-  `SITE_PASSWORD` is set.
+  entirely.
+- `SECRET_KEY` — signs the Flask session cookie (and, later, the
+  short-lived session state used mid-handshake by "Log in with Zotero").
+  Required whenever `SITE_PASSWORD` is set.
 
-This sits *in front of* `WRITE_SECRET`, which still separately gates
-write endpoints — the two are independent. Implementation:
-`app/__init__.py` (`before_request` guard + `site_password_configured`
-context processor), `app/routes.py` (`/login`, `/logout`),
-`app/templates/login.html`.
+Implementation: `app/__init__.py` (`before_request` guard +
+`site_password_configured` context processor), `app/routes.py`
+(`/login`, `/logout`), `app/templates/login.html`.
+
+## Deviation: removed WRITE_SECRET (2026-08)
+
+Write endpoints originally had a second, independent secret on top of
+`SITE_PASSWORD` — requests needed an `X-Write-Secret` header or `secret`
+form/query field, entered once per browser via a field in Settings.
+Removed once it became clear it was pure friction rather than real
+defense-in-depth for this deployment: only one other trusted person
+(besides the site owner) will ever use this, already behind
+`SITE_PASSWORD`, and the actual cost exposure of a compromised session
+(unwanted OpenRouter calls) is already bounded by rate limiting
+configured on the OpenRouter key itself. Re-entering a second secret on
+every new device/browser wasn't buying anything a single password gate
+plus that rate limit didn't already cover.
+
+Removed: `config.WRITE_SECRET`, `app/routes.py: require_write_secret`
+(and its use on every write route), the "Write secret" Settings block,
+`app/static/js/app.js`'s localStorage handling for it, and the hidden
+`secret` form fields in `queries.html`/`settings.html`. Every write
+route is now gated by `SITE_PASSWORD` alone, the same as every other
+page.
 
 ## Original deployment steps (superseded — kept for reference)
 

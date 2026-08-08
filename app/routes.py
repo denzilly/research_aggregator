@@ -1,7 +1,6 @@
 import secrets
 import subprocess
 import sys
-from functools import wraps
 
 import requests
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
@@ -16,17 +15,6 @@ bp = Blueprint("main", __name__)
 ZOTERO_REQUEST_TOKEN_URL = "https://www.zotero.org/oauth/request"
 ZOTERO_AUTHORIZE_URL = "https://www.zotero.org/oauth/authorize"
 ZOTERO_ACCESS_TOKEN_URL = "https://www.zotero.org/oauth/access"
-
-
-def require_write_secret(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if config.WRITE_SECRET:
-            provided = request.headers.get("X-Write-Secret") or request.form.get("secret") or request.args.get("secret")
-            if provided != config.WRITE_SECRET:
-                abort(403)
-        return f(*args, **kwargs)
-    return wrapper
 
 
 def _pipeline_status(conn):
@@ -154,7 +142,6 @@ def _validated_color(payload):
 
 
 @bp.route("/folders", methods=["POST"])
-@require_write_secret
 def create_folder():
     conn = get_db()
     payload = request.get_json(silent=True) or {}
@@ -169,7 +156,6 @@ def create_folder():
 
 
 @bp.route("/folders/<int:folder_id>", methods=["PATCH"])
-@require_write_secret
 def rename_folder(folder_id):
     conn = get_db()
     payload = request.get_json(silent=True) or {}
@@ -190,7 +176,6 @@ def rename_folder(folder_id):
 
 
 @bp.route("/folders/<int:folder_id>", methods=["DELETE"])
-@require_write_secret
 def delete_folder(folder_id):
     if not queries.delete_folder(folder_id, get_db()):
         abort(404)
@@ -198,7 +183,6 @@ def delete_folder(folder_id):
 
 
 @bp.route("/papers/<path:paper_id>/folders/<int:folder_id>", methods=["PUT"])
-@require_write_secret
 def add_paper_to_folder(paper_id, folder_id):
     if not queries.add_paper_to_folder(paper_id, folder_id, get_db()):
         abort(404)
@@ -206,7 +190,6 @@ def add_paper_to_folder(paper_id, folder_id):
 
 
 @bp.route("/papers/<path:paper_id>/folders/<int:folder_id>", methods=["DELETE"])
-@require_write_secret
 def remove_paper_from_folder(paper_id, folder_id):
     queries.remove_paper_from_folder(paper_id, folder_id, get_db())
     return jsonify({"paper_id": paper_id, "folder_id": folder_id, "in_folder": False})
@@ -216,7 +199,6 @@ def _render_queries_page(conn, status=200, **extra):
     return render_template(
         "queries.html",
         query_list=queries.list_queries(conn),
-        write_secret_configured=bool(config.WRITE_SECRET),
         pipeline=_pipeline_status(conn),
         **extra,
     ), status
@@ -228,7 +210,6 @@ def queries_page():
 
 
 @bp.route("/queries", methods=["POST"])
-@require_write_secret
 def create_query():
     conn = get_db()
     name = request.form.get("name", "").strip()
@@ -248,7 +229,6 @@ def create_query():
 
 
 @bp.route("/queries/<int:query_id>", methods=["POST"])
-@require_write_secret
 def update_query(query_id):
     conn = get_db()
     name = request.form.get("name", "").strip()
@@ -264,7 +244,6 @@ def update_query(query_id):
 
 
 @bp.route("/queries/<int:query_id>/delete", methods=["POST"])
-@require_write_secret
 def delete_query(query_id):
     queries.delete_query(query_id, get_db())
     if session.get("active_query_id") == query_id:
@@ -301,14 +280,12 @@ def settings():
     return render_template(
         "settings.html",
         pipeline=_pipeline_status(conn),
-        write_secret_configured=bool(config.WRITE_SECRET),
         zotero_oauth_configured=bool(config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET),
         **_run_log_context(conn),
     )
 
 
 @bp.route("/settings/run-now", methods=["POST"])
-@require_write_secret
 def run_now():
     conn = get_db()
     subprocess.Popen(
@@ -318,7 +295,6 @@ def run_now():
     return render_template(
         "settings.html",
         pipeline=_pipeline_status(conn),
-        write_secret_configured=bool(config.WRITE_SECRET),
         zotero_oauth_configured=bool(config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET),
         **_run_log_context(conn),
         triggered=True,
