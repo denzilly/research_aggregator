@@ -321,13 +321,20 @@ a:hover { text-decoration: underline; }
 
 .folder-manage-popover {
   position: fixed;
-  z-index: 50;
+  z-index: 1000;
   width: min(280px, calc(100vw - 24px));
-  background: var(--surface-elevated);
+  background-color: var(--surface-elevated);
   border: 1px solid var(--on-surface-faint);
   border-radius: var(--radius-md);
   padding: 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  /* Own, stable compositing layer + stacking context — without this, some
+     browsers only promote this to a layer at the moment `hidden` is
+     toggled off, which can race a hovered .paper-card's own repaint right
+     behind it and briefly composite the two in the wrong order (reported:
+     text bleeding through, hover pulling a card in front of the popover). */
+  isolation: isolate;
+  transform: translateZ(0);
 }
 .folder-manage-popover[hidden] { display: none; }
 .folder-manage-popover h4 {
@@ -582,12 +589,13 @@ button, .btn {
   cursor: pointer;
 }
 button:hover { filter: brightness(1.08); }
-button.ghost {
+.ghost {
   background: transparent;
   color: var(--on-surface-variant);
   border: 1px solid var(--outline);
 }
-button.ghost:hover { border-color: var(--primary); color: var(--primary); }
+.ghost:hover { border-color: var(--primary); color: var(--primary); }
+a.btn { display: inline-block; text-decoration: none; }
 
 /* ---------------------------------------------------------------- */
 /* Feed / paper rows */
@@ -824,6 +832,7 @@ button.ghost:hover { border-color: var(--primary); color: var(--primary); }
 .query-card-actions .field-group { flex: 1; min-width: 160px; }
 .flash { font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--success); }
 .flash-error { font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--error); }
+[data-zotero-username] { color: var(--on-surface); }
 
 .add-query-block {
   background: var(--surface-panel);
@@ -845,6 +854,7 @@ button.ghost:hover { border-color: var(--primary); color: var(--primary); }
 }
 .settings-block h2 { font-size: 13px; margin: 0 0 4px; color: var(--on-surface); }
 .settings-block .hint { font-size: 11px; color: var(--on-surface-variant); margin: 0 0 12px; }
+.settings-actions .hint { margin: 0; }
 .settings-block textarea { width: 100%; min-height: 80px; resize: vertical; }
 .settings-actions { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
 

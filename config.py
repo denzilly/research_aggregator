@@ -16,6 +16,12 @@ OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-v4-flas
 
 WRITE_SECRET = os.environ.get("WRITE_SECRET", "")
 
+# Zotero OAuth 1.0a "Login with Zotero" — from registering an app at
+# zotero.org/oauth/apps. Optional: when unset, Settings only offers the
+# manual API-key connect path (app/static/js/app.js), which needs neither.
+ZOTERO_CLIENT_KEY = os.environ.get("ZOTERO_CLIENT_KEY", "")
+ZOTERO_CLIENT_SECRET = os.environ.get("ZOTERO_CLIENT_SECRET", "")
+
 SITE_PASSWORD = os.environ.get("SITE_PASSWORD", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 

@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from flask import Flask, g, redirect, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
 import db
@@ -16,6 +17,11 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.SECRET_KEY
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+    # Trust the one reverse-proxy hop (Cloudflare Tunnel) for scheme/host —
+    # without this, url_for(..., _external=True) (used to build the Zotero
+    # OAuth callback URL) would resolve to gunicorn's plain-http view of
+    # itself instead of the site's real public https:// URL.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     @app.teardown_appcontext
     def close_db(exception=None):

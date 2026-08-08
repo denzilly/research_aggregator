@@ -3,13 +3,19 @@ import subprocess
 import sys
 from functools import wraps
 
+import requests
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
+from requests_oauthlib import OAuth1Session
 
 import config
 from app import get_db, queries
 from ingest.keywords import parse_keywords
 
 bp = Blueprint("main", __name__)
+
+ZOTERO_REQUEST_TOKEN_URL = "https://www.zotero.org/oauth/request"
+ZOTERO_AUTHORIZE_URL = "https://www.zotero.org/oauth/authorize"
+ZOTERO_ACCESS_TOKEN_URL = "https://www.zotero.org/oauth/access"
 
 
 def require_write_secret(f):
@@ -296,6 +302,7 @@ def settings():
         "settings.html",
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
+        zotero_oauth_configured=bool(config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET),
         **_run_log_context(conn),
     )
 
@@ -312,6 +319,96 @@ def run_now():
         "settings.html",
         pipeline=_pipeline_status(conn),
         write_secret_configured=bool(config.WRITE_SECRET),
+        zotero_oauth_configured=bool(config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET),
         **_run_log_context(conn),
         triggered=True,
     )
+
+
+@bp.route("/zotero/login")
+def zotero_login():
+    """Step 1 of 3-legged OAuth 1.0a: fetch a temporary request token, stash
+    its secret in this browser's (server-side, cookie-linked) session for
+    /zotero/callback to pick back up, then send the user to zotero.org to
+    approve access. Requires an app registered at zotero.org/oauth/apps —
+    404s rather than erroring if that's not configured, same as any other
+    route that doesn't exist, since the "Log in with Zotero" button is
+    itself hidden in that case (see settings.html)."""
+    if not (config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET):
+        abort(404)
+    callback_uri = url_for("main.zotero_callback", _external=True)
+    oauth = OAuth1Session(
+        config.ZOTERO_CLIENT_KEY, client_secret=config.ZOTERO_CLIENT_SECRET, callback_uri=callback_uri
+    )
+    try:
+        fetch_response = oauth.fetch_request_token(ZOTERO_REQUEST_TOKEN_URL)
+    except Exception:
+        abort(502)
+    session["zotero_oauth_token"] = fetch_response.get("oauth_token")
+    session["zotero_oauth_token_secret"] = fetch_response.get("oauth_token_secret")
+    authorize_url = oauth.authorization_url(
+        ZOTERO_AUTHORIZE_URL,
+        library_access=1,
+        notes_access=0,
+        write_access=1,
+        all_groups="none",
+        name="phageDB",
+    )
+    return redirect(authorize_url)
+
+
+@bp.route("/zotero/callback")
+def zotero_callback():
+    """Step 3: Zotero redirects back here with a verifier. Exchanged
+    server-side (needs the app's client secret to sign the request), but
+    the resulting key is handed to zotero_callback.html to store client-side
+    in this browser's localStorage — same trust model as the manual
+    API-key path, the server doesn't keep a copy."""
+    if not (config.ZOTERO_CLIENT_KEY and config.ZOTERO_CLIENT_SECRET):
+        abort(404)
+
+    stored_token = session.pop("zotero_oauth_token", None)
+    stored_secret = session.pop("zotero_oauth_token_secret", None)
+    verifier = request.args.get("oauth_verifier")
+    returned_token = request.args.get("oauth_token")
+
+    if not (stored_token and stored_secret and verifier) or returned_token != stored_token:
+        return render_template(
+            "zotero_callback.html",
+            error="That Zotero login didn't complete (or took too long) — try connecting again from Settings.",
+        )
+
+    oauth = OAuth1Session(
+        config.ZOTERO_CLIENT_KEY,
+        client_secret=config.ZOTERO_CLIENT_SECRET,
+        resource_owner_key=stored_token,
+        resource_owner_secret=stored_secret,
+        verifier=verifier,
+    )
+    try:
+        access_token = oauth.fetch_access_token(ZOTERO_ACCESS_TOKEN_URL)
+    except Exception:
+        return render_template(
+            "zotero_callback.html", error="Couldn't complete the Zotero handshake — try again."
+        )
+
+    # Zotero's OAuth is simplified versus the spec: the returned
+    # oauth_token_secret doubles as the permanent Zotero API key used for
+    # subsequent Web API calls — there's no separate "exchange for an API
+    # key" step. See https://www.zotero.org/support/dev/web_api/v3/oauth.
+    key = access_token.get("oauth_token_secret")
+    user_id = access_token.get("userID")
+    if not (key and user_id):
+        return render_template(
+            "zotero_callback.html", error="Zotero didn't return a usable key — try again."
+        )
+
+    username = ""
+    try:
+        verify_resp = requests.get(f"https://api.zotero.org/keys/{key}", timeout=10)
+        verify_resp.raise_for_status()
+        username = verify_resp.json().get("username", "")
+    except Exception:
+        pass  # Non-fatal — the key still works without a display name.
+
+    return render_template("zotero_callback.html", key=key, user_id=user_id, username=username)

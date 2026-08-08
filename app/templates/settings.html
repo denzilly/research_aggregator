@@ -85,13 +85,26 @@
   <div class="settings-block">
     <h2>Zotero</h2>
     <p class="hint">
-      Connect your Zotero account to add papers to your library with one click. Create a
-      personal API key with library read/write access at
-      <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a>,
-      then paste it below. Stored only in this browser's local storage — sent straight to
-      Zotero's API, never to this server.
+      Connect your Zotero account to add papers to your library with one click.
+      {% if zotero_oauth_configured %}
+        Stays in this browser either way — the server never keeps a copy of your Zotero key.
+      {% else %}
+        Create a personal API key with library read/write access at
+        <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a>,
+        then paste it below. Stored only in this browser's local storage — sent straight to
+        Zotero's API, never to this server.
+      {% endif %}
     </p>
     <div class="field-group" data-zotero-connect-form>
+      {% if zotero_oauth_configured %}
+      <div class="settings-actions" style="margin-top: 0;">
+        <a class="btn ghost" href="{{ url_for('main.zotero_login') }}">Log in with Zotero</a>
+      </div>
+      <p class="hint" style="margin: 10px 0 0;">
+        Or paste a personal API key with library read/write access, created at
+        <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a>:
+      </p>
+      {% endif %}
       <input type="password" id="zotero-key-input" placeholder="Zotero API key">
       <div class="settings-actions">
         <button type="button" class="ghost" id="connect-zotero">Connect</button>
