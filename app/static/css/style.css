@@ -321,13 +321,20 @@ a:hover { text-decoration: underline; }
 
 .folder-manage-popover {
   position: fixed;
-  z-index: 50;
+  z-index: 1000;
   width: min(280px, calc(100vw - 24px));
-  background: var(--surface-elevated);
+  background-color: var(--surface-elevated);
   border: 1px solid var(--on-surface-faint);
   border-radius: var(--radius-md);
   padding: 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  /* Own, stable compositing layer + stacking context — without this, some
+     browsers only promote this to a layer at the moment `hidden` is
+     toggled off, which can race a hovered .paper-card's own repaint right
+     behind it and briefly composite the two in the wrong order (reported:
+     text bleeding through, hover pulling a card in front of the popover). */
+  isolation: isolate;
+  transform: translateZ(0);
 }
 .folder-manage-popover[hidden] { display: none; }
 .folder-manage-popover h4 {
