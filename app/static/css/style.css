@@ -121,7 +121,12 @@ a:hover { text-decoration: underline; }
   color: var(--on-surface-faint);
   font-size: 15px;
 }
-.topbar-search input {
+/* [type="text"] added purely for specificity — without it this rule ties
+   with the generic `input[type="text"]` rule further down the sheet, and
+   losing that tie (same specificity, later source order) was dropping this
+   left padding back to the generic 8px, pulling the input text in behind
+   the search icon. */
+.topbar-search input[type="text"] {
   width: 240px;
   background: var(--surface);
   border: 1px solid var(--outline);
@@ -130,12 +135,12 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   color: var(--on-surface);
 }
-.topbar-search input:focus {
+.topbar-search input[type="text"]:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: none;
 }
-.topbar-search input::placeholder { color: var(--on-surface-faint); }
+.topbar-search input[type="text"]::placeholder { color: var(--on-surface-faint); }
 
 .topbar-right {
   display: flex;
