@@ -380,6 +380,35 @@ document.querySelectorAll("[data-new-folder-form]").forEach((form) => {
   });
 });
 
+// ---- Mark as read/unread ----
+
+function updateReadButtonState(btn, isRead) {
+  btn.classList.toggle("is-read", isRead);
+  btn.querySelector(".material-symbols-outlined").textContent = isRead ? "check_circle" : "radio_button_unchecked";
+  btn.querySelector("[data-read-label]").textContent = isRead ? "Read" : "Mark read";
+  btn.title = isRead ? "Mark as unread" : "Mark as read";
+}
+
+document.querySelectorAll("[data-read-btn]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const card = btn.closest("[data-paper-id]");
+    const paperId = card.dataset.paperId;
+    const wasRead = btn.classList.contains("is-read");
+    const method = wasRead ? "DELETE" : "PUT";
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/papers/${encodeURIComponent(paperId)}/read`, { method });
+      if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
+      const result = await resp.json();
+      updateReadButtonState(btn, result.read);
+    } catch (err) {
+      alert("Couldn't update read status.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+
 // ---- Cite ----
 
 async function copyToClipboard(text) {

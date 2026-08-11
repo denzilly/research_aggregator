@@ -4,7 +4,12 @@
   <div class="content-toolbar">
     <div class="tab-row">
       {% for key, label in [("day", "Today"), ("week", "This Week"), ("month", "This Month"), ("all", "All Time")] %}
-        <a href="{{ url_for('main.digest') }}?window={{ key }}" class="{{ 'active' if window == key }}">{{ label }}</a>
+        <a href="{{ url_for('main.digest') }}?window={{ key }}&read={{ read_filter }}" class="{{ 'active' if window == key }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <div class="read-filter-toggle">
+      {% for key, label in [("all", "All"), ("unread", "Unread")] %}
+        <a href="{{ url_for('main.digest') }}?window={{ window }}&read={{ key }}" class="{{ 'active' if read_filter == key }}">{{ label }}</a>
       {% endfor %}
     </div>
   </div>

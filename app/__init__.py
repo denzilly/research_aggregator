@@ -65,7 +65,12 @@ def create_app():
         conn = get_db()
         active_id = session.get("active_query_id")
         active_query = queries.get_query(active_id, conn) if active_id else None
-        return {"queries": queries.list_queries(conn), "active_query": active_query}
+        return {
+            "queries": queries.list_queries(conn),
+            "active_query": active_query,
+            "query_unread_counts": queries.get_unread_counts(conn),
+            "all_queries_unread_count": queries.count_unread_papers(conn),
+        }
 
     @app.before_request
     def require_login():

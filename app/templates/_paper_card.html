@@ -58,6 +58,11 @@
           </form>
         </div>
       </div>
+      <button type="button" class="row-action-btn {{ 'is-read' if paper.read_at }}" data-read-btn
+              title="{{ 'Mark as unread' if paper.read_at else 'Mark as read' }}">
+        <span class="material-symbols-outlined">{{ 'check_circle' if paper.read_at else 'radio_button_unchecked' }}</span>
+        <span data-read-label>{{ "Read" if paper.read_at else "Mark read" }}</span>
+      </button>
       <button type="button" class="row-action-btn" data-cite-btn data-citation="{{ citation }}" title="Copy citation">
         <span class="material-symbols-outlined">format_quote</span>
         <span data-cite-label>Cite</span>

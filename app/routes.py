@@ -78,9 +78,15 @@ def digest():
     window = request.args.get("window", queries.DEFAULT_DIGEST_WINDOW)
     if window not in queries.DIGEST_WINDOWS:
         window = queries.DEFAULT_DIGEST_WINDOW
+    read_filter = request.args.get("read", "all")
+    if read_filter not in ("all", "unread"):
+        read_filter = "all"
     active_query_id = session.get("active_query_id")
     papers = queries.get_digest_papers(
-        conn, window_days=queries.DIGEST_WINDOWS[window], query_id=active_query_id
+        conn,
+        window_days=queries.DIGEST_WINDOWS[window],
+        query_id=active_query_id,
+        unread_only=(read_filter == "unread"),
     )
     paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
     return render_template(
@@ -88,6 +94,7 @@ def digest():
         papers=papers,
         paper_folder_ids=paper_folder_ids,
         window=window,
+        read_filter=read_filter,
         pipeline=_pipeline_status(conn),
     )
 
@@ -193,6 +200,20 @@ def add_paper_to_folder(paper_id, folder_id):
 def remove_paper_from_folder(paper_id, folder_id):
     queries.remove_paper_from_folder(paper_id, folder_id, get_db())
     return jsonify({"paper_id": paper_id, "folder_id": folder_id, "in_folder": False})
+
+
+@bp.route("/papers/<path:paper_id>/read", methods=["PUT"])
+def mark_paper_read(paper_id):
+    if not queries.mark_paper_read(paper_id, get_db()):
+        abort(404)
+    return jsonify({"paper_id": paper_id, "read": True})
+
+
+@bp.route("/papers/<path:paper_id>/read", methods=["DELETE"])
+def mark_paper_unread(paper_id):
+    if not queries.mark_paper_unread(paper_id, get_db()):
+        abort(404)
+    return jsonify({"paper_id": paper_id, "read": False})
 
 
 def _render_queries_page(conn, status=200, **extra):

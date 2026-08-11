@@ -58,7 +58,7 @@ DIGEST_WINDOWS = {"day": 1, "week": DIGEST_WINDOW_DAYS, "month": 30, "all": None
 DEFAULT_DIGEST_WINDOW = "week"
 
 
-def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None):
+def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None, unread_only=False):
     """Papers ingested in the last window_days (None = no cutoff), relevance DESC.
 
     Deliberately a rolling window rather than "papers from the single most
@@ -76,6 +76,8 @@ def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None):
     if query_id:
         sql += " AND papers.id IN (SELECT paper_id FROM paper_queries WHERE query_id = ?)"
         params.append(query_id)
+    if unread_only:
+        sql += " AND read_at IS NULL"
     sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
     return conn.execute(sql, params).fetchall()
 
@@ -113,6 +115,22 @@ def search_papers(query="", source="", since="", until="", folder_id=None, query
     sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
 
     return conn.execute(sql, params).fetchall()
+
+
+def mark_paper_read(paper_id: str, conn=None) -> bool:
+    """Idempotent — re-marking an already-read paper just refreshes read_at.
+    Returns False if paper_id doesn't exist."""
+    conn = conn or db.get_connection()
+    cur = conn.execute("UPDATE papers SET read_at = datetime('now') WHERE id = ?", (paper_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def mark_paper_unread(paper_id: str, conn=None) -> bool:
+    conn = conn or db.get_connection()
+    cur = conn.execute("UPDATE papers SET read_at = NULL WHERE id = ?", (paper_id,))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def list_folders(conn=None):
@@ -302,3 +320,25 @@ def backfill_query_matches(query_id: int, keywords: list[str], conn=None) -> int
     ]
     associate_papers_with_query(matches, query_id, conn)
     return len(matches)
+
+
+def get_unread_counts(conn=None) -> dict[int, int]:
+    """All-time unread paper count per query, for the small badge next to each
+    query in the sidebar — deliberately ignores the digest window/read-filter
+    that's currently applied, since it's meant to answer "how much is waiting
+    across the whole archive", not "how much is on screen right now"."""
+    conn = conn or db.get_connection()
+    rows = conn.execute("""
+        SELECT paper_queries.query_id AS query_id, COUNT(*) AS n
+        FROM paper_queries
+        JOIN papers ON papers.id = paper_queries.paper_id
+        WHERE papers.read_at IS NULL
+        GROUP BY paper_queries.query_id
+    """).fetchall()
+    return {row["query_id"]: row["n"] for row in rows}
+
+
+def count_unread_papers(conn=None) -> int:
+    """All-time unread count across every paper, for the "All queries" row."""
+    conn = conn or db.get_connection()
+    return conn.execute("SELECT COUNT(*) AS n FROM papers WHERE read_at IS NULL").fetchone()["n"]
