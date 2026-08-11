@@ -37,6 +37,10 @@ def init_db():
     # Optional per-folder color swatch (hex string from queries.FOLDER_COLORS),
     # NULL meaning "no color set" — rendered as a neutral dot.
     _add_column_if_missing(conn, "folders", "color", "TEXT")
+    # Read/unread tracking. NULL = unread; a timestamp once marked read.
+    # A plain column (not a join table like folders) since "read" is a single
+    # boolean-ish flag per paper, not a many-valued relationship.
+    _add_column_if_missing(conn, "papers", "read_at", "TEXT")
     conn.commit()
     conn.close()
 

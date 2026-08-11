@@ -2,11 +2,18 @@
   <h3 class="sidebar-section-title">Queries</h3>
   <ul class="sidebar-list">
     <li class="sidebar-item {{ 'active' if not active_query }}">
-      <a href="{{ url_for('main.deactivate_query') }}"><span>All queries</span></a>
+      <a href="{{ url_for('main.deactivate_query') }}">
+        <span>All queries</span>
+        {% if all_queries_unread_count %}<span class="unread-badge">{{ all_queries_unread_count }}</span>{% endif %}
+      </a>
     </li>
     {% for q in queries %}
+    {% set unread = query_unread_counts.get(q.id, 0) %}
     <li class="sidebar-item {{ 'active' if active_query and active_query.id == q.id }}">
-      <a href="{{ url_for('main.activate_query', query_id=q.id) }}"><span class="sidebar-item-name">{{ q.name }}</span></a>
+      <a href="{{ url_for('main.activate_query', query_id=q.id) }}">
+        <span class="sidebar-item-name">{{ q.name }}</span>
+        {% if unread %}<span class="unread-badge">{{ unread }}</span>{% endif %}
+      </a>
     </li>
     {% else %}
     <li class="sidebar-empty">No queries yet &mdash; <a href="{{ url_for('main.queries_page') }}">add one</a>.</li>

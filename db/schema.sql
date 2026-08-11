@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS papers (
   relevance_score REAL,         -- LLM-generated, 0-10
   url TEXT,
   is_favorite INTEGER NOT NULL DEFAULT 0,  -- DEPRECATED: superseded by folders (see below). Do not read/write from app code.
-  ingested_at TEXT NOT NULL
+  ingested_at TEXT NOT NULL,
+  read_at TEXT                  -- NULL = unread; timestamp of when it was marked read otherwise
 );
 
 CREATE INDEX IF NOT EXISTS idx_papers_ingested_at ON papers(ingested_at);

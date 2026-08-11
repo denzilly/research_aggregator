@@ -268,6 +268,17 @@ a:hover { text-decoration: underline; }
 
 .sidebar-count { color: var(--on-surface-faint); font-weight: 400; }
 
+.unread-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--on-primary);
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  padding: 1px 6px;
+  line-height: 1.5;
+}
+
 .sidebar-folder-icon { color: var(--primary); font-size: 15px; flex-shrink: 0; }
 
 .sidebar-empty {
@@ -502,6 +513,27 @@ a:hover { text-decoration: underline; }
 .tab-row a:hover { color: var(--on-surface-variant); text-decoration: none; }
 .tab-row a.active { color: var(--primary); border-bottom-color: var(--primary); }
 
+.read-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+.read-filter-toggle a {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--on-surface-faint);
+  border-radius: var(--radius-sm);
+}
+.read-filter-toggle a:hover { color: var(--on-surface-variant); text-decoration: none; }
+.read-filter-toggle a.active { background: var(--primary); color: var(--on-primary); }
+
 .content-inner { max-width: 900px; margin: 0 auto; width: 100%; padding: 20px 20px 60px; }
 .content-inner.wide { max-width: 1100px; }
 
@@ -708,6 +740,8 @@ a.btn { display: inline-block; text-decoration: none; }
 .row-action-btn.has-folders .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
 .row-action-btn.in-zotero { color: var(--primary); }
 .row-action-btn.in-zotero .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+.row-action-btn.is-read { color: var(--success); }
+.row-action-btn.is-read .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
 
 .save-wrap { position: relative; }
 
