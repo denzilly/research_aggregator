@@ -354,9 +354,3 @@ def get_unread_counts(conn=None) -> dict[int, int]:
         GROUP BY paper_queries.query_id
     """).fetchall()
     return {row["query_id"]: row["n"] for row in rows}
-
-
-def count_unread_papers(conn=None) -> int:
-    """All-time unread count across every paper, for the "All queries" row."""
-    conn = conn or db.get_connection()
-    return conn.execute("SELECT COUNT(*) AS n FROM papers WHERE read_at IS NULL").fetchone()["n"]

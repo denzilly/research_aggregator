@@ -69,7 +69,6 @@ def create_app():
             "queries": queries.list_queries(conn),
             "active_query": active_query,
             "query_unread_counts": queries.get_unread_counts(conn),
-            "all_queries_unread_count": queries.count_unread_papers(conn),
         }
 
     @app.before_request

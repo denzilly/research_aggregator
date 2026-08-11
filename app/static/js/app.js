@@ -391,8 +391,8 @@ function updateReadButtonState(btn, isRead) {
 
 // Sidebar unread badges are rendered even at 0 (just hidden), so toggling a
 // paper's read state can update them in place instead of waiting for the
-// next full page load — same delta applied to "All queries" and to every
-// query this paper belongs to (data-query-ids on the card, set server-side).
+// next full page load — same delta applied to every query this paper
+// belongs to (data-query-ids on the card, set server-side).
 function bumpUnreadBadge(key, delta) {
   const el = document.querySelector(`[data-unread-badge="${key}"]`);
   if (!el) return;
@@ -415,7 +415,6 @@ document.querySelectorAll("[data-read-btn]").forEach((btn) => {
       const result = await resp.json();
       updateReadButtonState(btn, result.read);
       const delta = result.read ? -1 : 1;
-      bumpUnreadBadge("all", delta);
       queryIds.forEach((id) => bumpUnreadBadge(id, delta));
     } catch (err) {
       alert("Couldn't update read status.");

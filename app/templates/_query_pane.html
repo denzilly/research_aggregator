@@ -2,10 +2,7 @@
   <h3 class="sidebar-section-title">Queries</h3>
   <ul class="sidebar-list">
     <li class="sidebar-item {{ 'active' if not active_query }}">
-      <a href="{{ url_for('main.deactivate_query') }}">
-        <span>All queries</span>
-        <span class="unread-badge" data-unread-badge="all" {{ "hidden" if not all_queries_unread_count }}>{{ all_queries_unread_count }}</span>
-      </a>
+      <a href="{{ url_for('main.deactivate_query') }}"><span>All queries</span></a>
     </li>
     {% for q in queries %}
     {% set unread = query_unread_counts.get(q.id, 0) %}
