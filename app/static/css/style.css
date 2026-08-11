@@ -24,6 +24,8 @@
   --cat-biorxiv: #4ade80;
   --cat-medrxiv: #fbbf24;
 
+  --unread: #fb923c;               /* soft orange — unread-count numbers */
+
   --surface-elevated: #1b2636;     /* popovers/menus — a shade lighter than surface-panel, distinct from outline */
 
   --font-ui: "Inter", system-ui, sans-serif;
@@ -270,13 +272,9 @@ a:hover { text-decoration: underline; }
 
 .unread-badge {
   flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--on-primary);
-  background: var(--primary);
-  border-radius: var(--radius-full);
-  padding: 1px 6px;
-  line-height: 1.5;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--unread);
 }
 
 .sidebar-folder-icon { color: var(--primary); font-size: 15px; flex-shrink: 0; }

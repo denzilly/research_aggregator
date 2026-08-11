@@ -4,7 +4,7 @@
     <li class="sidebar-item {{ 'active' if not active_query }}">
       <a href="{{ url_for('main.deactivate_query') }}">
         <span>All queries</span>
-        {% if all_queries_unread_count %}<span class="unread-badge">{{ all_queries_unread_count }}</span>{% endif %}
+        <span class="unread-badge" data-unread-badge="all" {{ "hidden" if not all_queries_unread_count }}>{{ all_queries_unread_count }}</span>
       </a>
     </li>
     {% for q in queries %}
@@ -12,7 +12,7 @@
     <li class="sidebar-item {{ 'active' if active_query and active_query.id == q.id }}">
       <a href="{{ url_for('main.activate_query', query_id=q.id) }}">
         <span class="sidebar-item-name">{{ q.name }}</span>
-        {% if unread %}<span class="unread-badge">{{ unread }}</span>{% endif %}
+        <span class="unread-badge" data-unread-badge="{{ q.id }}" {{ "hidden" if not unread }}>{{ unread }}</span>
       </a>
     </li>
     {% else %}

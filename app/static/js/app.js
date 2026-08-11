@@ -389,10 +389,23 @@ function updateReadButtonState(btn, isRead) {
   btn.title = isRead ? "Mark as unread" : "Mark as read";
 }
 
+// Sidebar unread badges are rendered even at 0 (just hidden), so toggling a
+// paper's read state can update them in place instead of waiting for the
+// next full page load — same delta applied to "All queries" and to every
+// query this paper belongs to (data-query-ids on the card, set server-side).
+function bumpUnreadBadge(key, delta) {
+  const el = document.querySelector(`[data-unread-badge="${key}"]`);
+  if (!el) return;
+  const next = Math.max(0, parseInt(el.textContent, 10) + delta);
+  el.textContent = String(next);
+  el.hidden = next === 0;
+}
+
 document.querySelectorAll("[data-read-btn]").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const card = btn.closest("[data-paper-id]");
     const paperId = card.dataset.paperId;
+    const queryIds = (card.dataset.queryIds || "").split(",").filter(Boolean);
     const wasRead = btn.classList.contains("is-read");
     const method = wasRead ? "DELETE" : "PUT";
     btn.disabled = true;
@@ -401,6 +414,9 @@ document.querySelectorAll("[data-read-btn]").forEach((btn) => {
       if (!resp.ok) throw new Error(`Request failed: ${resp.status}`);
       const result = await resp.json();
       updateReadButtonState(btn, result.read);
+      const delta = result.read ? -1 : 1;
+      bumpUnreadBadge("all", delta);
+      queryIds.forEach((id) => bumpUnreadBadge(id, delta));
     } catch (err) {
       alert("Couldn't update read status.");
     } finally {

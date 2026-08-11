@@ -2,7 +2,8 @@
 {% set source_label = source_labels.get(paper.source, paper.source) %}
 {% set year = (paper.published_date[:4] if paper.published_date else "") %}
 {% set citation = (paper.authors or "Unknown authors") ~ (" (" ~ year ~ ")." if year else ".") ~ " " ~ paper.title ~ ("" if paper.title.endswith(".") else ".") ~ " " ~ source_label ~ "." ~ (" " ~ paper.url if paper.url else "") %}
-<article class="paper-card" data-paper-id="{{ paper.id }}">
+<article class="paper-card" data-paper-id="{{ paper.id }}"
+         data-query-ids="{{ (paper_query_ids.get(paper.id) or [])|join(',') }}">
   <div class="paper-card-top">
     <h3 class="paper-title">
       <a href="{{ paper.url }}" target="_blank" rel="noopener">{{ paper.title }}</a>

@@ -88,11 +88,14 @@ def digest():
         query_id=active_query_id,
         unread_only=(read_filter == "unread"),
     )
-    paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
+    paper_ids = [p["id"] for p in papers]
+    paper_folder_ids = queries.get_folder_ids_for_papers(paper_ids, conn)
+    paper_query_ids = queries.get_query_ids_for_papers(paper_ids, conn)
     return render_template(
         "digest.html",
         papers=papers,
         paper_folder_ids=paper_folder_ids,
+        paper_query_ids=paper_query_ids,
         window=window,
         read_filter=read_filter,
         pipeline=_pipeline_status(conn),
@@ -119,7 +122,9 @@ def search():
         folder_id=folder_id,
         query_id=active_query_id,
     )
-    paper_folder_ids = queries.get_folder_ids_for_papers([p["id"] for p in papers], conn)
+    paper_ids = [p["id"] for p in papers]
+    paper_folder_ids = queries.get_folder_ids_for_papers(paper_ids, conn)
+    paper_query_ids = queries.get_query_ids_for_papers(paper_ids, conn)
     return render_template(
         "search.html",
         papers=papers,
@@ -129,6 +134,7 @@ def search():
         until=until,
         folder=folder,
         paper_folder_ids=paper_folder_ids,
+        paper_query_ids=paper_query_ids,
         pipeline=_pipeline_status(conn),
     )
 

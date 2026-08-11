@@ -212,6 +212,24 @@ def get_folder_ids_for_papers(paper_ids: list[str], conn=None) -> dict[str, list
     return result
 
 
+def get_query_ids_for_papers(paper_ids: list[str], conn=None) -> dict[str, list[int]]:
+    """Bulk query-membership lookup for a page of papers — lets the client
+    know which sidebar unread badges to decrement/increment when a paper's
+    read state is toggled, without a round trip."""
+    conn = conn or db.get_connection()
+    if not paper_ids:
+        return {}
+    placeholders = ",".join("?" * len(paper_ids))
+    rows = conn.execute(
+        f"SELECT paper_id, query_id FROM paper_queries WHERE paper_id IN ({placeholders})",
+        paper_ids,
+    ).fetchall()
+    result: dict[str, list[int]] = {}
+    for row in rows:
+        result.setdefault(row["paper_id"], []).append(row["query_id"])
+    return result
+
+
 def add_paper_to_folder(paper_id: str, folder_id: int, conn=None) -> bool:
     """Idempotent add. Returns False if paper_id or folder_id don't exist."""
     conn = conn or db.get_connection()
