@@ -292,6 +292,21 @@ Still applies as-is — see verification checklist below.
   so a missed migration is scoped to that page 500ing rather than
   site-wide, but still run `docker compose run --rm phage-digest python
   db.py` before deploying this app code.
+- **Per-query scoring migration deploy order** — same requirement again,
+  and bigger than the previous ones: `relevance_score`/`summary` moved off
+  `papers` onto `paper_queries` (scoped per query, now that queries'
+  keywords/scoring guidance can differ meaningfully — see `app/queries.py`:
+  `_score_join`), and `papers_fts` was rebuilt to drop `summary`. All three
+  (new `paper_queries` columns, the FTS rebuild, and copying existing
+  scores over) happen in `db.py: init_db()`, so run `docker compose run
+  --rm phage-digest python db.py` before deploying this app code — every
+  page reads the new `paper_queries.relevance_score`/`summary` columns
+  unconditionally, so a missed migration 500s site-wide (`no such column`),
+  same failure mode as the folders/queries migrations above. The FTS
+  rebuild touches every row and is the slowest step of any migration so
+  far, though still well under a second at this archive's size (order
+  hundreds of papers) — worth knowing if the archive grows much larger.
+  New: this also adds `queries.scoring_instructions` and `runs.run_type`.
 - **Real query keywords** — the migrated "Default" query still carries
   whatever the old placeholder keyword list was. Worth reviewing/renaming
   on the Queries page and splitting into separate named queries if the
