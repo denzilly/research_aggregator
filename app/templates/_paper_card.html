@@ -13,6 +13,12 @@
       {% if paper.relevance_score is not none %}
         <span class="score-badge">{{ "%.0f"|format(paper.relevance_score) }}/10</span>
       {% endif %}
+      {% if paper.score_query_name %}
+        {# Only set when no single query is active — see app/queries.py:
+           _score_join — so this paper's score is one of several it could
+           have; name which query it's the best match for. #}
+        <span class="score-query-label">via {{ paper.score_query_name }}</span>
+      {% endif %}
     </div>
   </div>
 

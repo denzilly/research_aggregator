@@ -12,17 +12,23 @@ FOLDER_COLORS = ["#60a5fa", "#4ade80", "#fbbf24", "#f472b6", "#a78bfa", "#f87171
 
 
 def get_latest_run_batch(conn=None):
-    """All `runs` rows from the most recent ingestion invocation. Before
-    multi-query support there was one row per invocation; now there's one
-    per (invocation x query), all sharing the same started_at timestamp
-    (see ingest/ingest.py) — grouping on that gives invocation-level status
-    for free, with legacy single-row invocations behaving as a batch of one."""
+    """All `runs` rows from the most recent *ingestion* invocation (the
+    header pipeline-status pill's "Last run: ... N new" is specifically
+    about fetching, so a background backfill job — see
+    ingest/backfill_scores.py, run_type = 'backfill' — must never shadow it
+    here even if it ran more recently). Before multi-query support there was
+    one row per invocation; now there's one per (invocation x query), all
+    sharing the same started_at timestamp (see ingest/ingest.py) — grouping
+    on that gives invocation-level status for free, with legacy single-row
+    invocations behaving as a batch of one."""
     conn = conn or db.get_connection()
-    latest = conn.execute("SELECT MAX(started_at) AS s FROM runs").fetchone()["s"]
+    latest = conn.execute(
+        "SELECT MAX(started_at) AS s FROM runs WHERE run_type = 'ingest'"
+    ).fetchone()["s"]
     if latest is None:
         return []
     return conn.execute(
-        "SELECT * FROM runs WHERE started_at = ? ORDER BY id", (latest,)
+        "SELECT * FROM runs WHERE started_at = ? AND run_type = 'ingest' ORDER BY id", (latest,)
     ).fetchall()
 
 
@@ -30,15 +36,16 @@ RUN_LOG_LIMIT = 50
 
 
 def list_recent_runs(limit=RUN_LOG_LIMIT, conn=None):
-    """Most recent completed-or-failed runs (one per query per invocation),
-    newest first, for the Settings page run log. `query_name` is NULL for a
-    run whose query has since been deleted (runs.query_id is ON DELETE SET
-    NULL — a historical log entry, not a pure join row) — the template
-    labels those "Deleted query" rather than dropping them."""
+    """Most recent completed-or-failed runs (one per query per invocation,
+    ingestion and backfill jobs interleaved by recency), newest first, for
+    the Settings page run log. `query_name` is NULL for a run whose query
+    has since been deleted (runs.query_id is ON DELETE SET NULL — a
+    historical log entry, not a pure join row) — the template labels those
+    "Deleted query" rather than dropping them."""
     conn = conn or db.get_connection()
     return conn.execute(
         """
-        SELECT runs.id, runs.started_at, runs.finished_at, runs.status,
+        SELECT runs.id, runs.started_at, runs.finished_at, runs.status, runs.run_type,
                runs.new_papers_count, runs.error_message, runs.cost_usd,
                queries.name AS query_name
         FROM runs
@@ -57,6 +64,58 @@ DIGEST_WINDOW_DAYS = 7
 DIGEST_WINDOWS = {"day": 1, "week": DIGEST_WINDOW_DAYS, "month": 30, "all": None}
 DEFAULT_DIGEST_WINDOW = "week"
 
+# papers.* minus relevance_score/summary, which are DEPRECATED there (see
+# db/schema.sql) — scoring now lives on paper_queries, scoped per query.
+# Selected explicitly rather than `papers.*` so the real, aliased
+# relevance_score/summary columns from _score_join() below don't collide
+# with these deprecated same-named ones: sqlite3.Row resolves a name to
+# whichever matching column came *first* in the result set, so if the
+# deprecated papers.relevance_score were included, `row["relevance_score"]`
+# (and Jinja's `paper.relevance_score`) would silently read stale/NULL data
+# instead of the per-query score.
+_PAPER_COLUMNS = (
+    "papers.id, papers.source, papers.title, papers.authors, papers.published_date, "
+    "papers.abstract, papers.url, papers.ingested_at, papers.read_at"
+)
+
+
+def _score_join(query_id):
+    """Returns (join_sql, select_cols_sql, join_params) providing each
+    paper's relevance_score/summary/score_query_name:
+
+    - query_id given: that query's own score for the paper (an INNER JOIN,
+      which doubles as the "paper belongs to this query" filter — replaces
+      the old `papers.id IN (SELECT ... WHERE query_id = ?)` clause).
+      score_query_name is always NULL here — redundant to label a score
+      with the query the caller already knows is active.
+    - query_id is None ("All queries" / unfiltered search): each paper's
+      single *highest* score across every query it matches (decision:
+      option 2 in the scoring-instructions discussion), via a
+      ROW_NUMBER() window per paper. score_query_name names which query
+      that best score came from, so the UI can label it."""
+    if query_id:
+        return (
+            "JOIN paper_queries ON paper_queries.paper_id = papers.id AND paper_queries.query_id = ?",
+            "paper_queries.relevance_score AS relevance_score, "
+            "paper_queries.summary AS summary, "
+            "NULL AS score_query_name",
+            [query_id],
+        )
+    return (
+        """
+        LEFT JOIN (
+            SELECT pq.paper_id, pq.relevance_score, pq.summary, q.name AS query_name,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY pq.paper_id ORDER BY pq.relevance_score DESC NULLS LAST
+                   ) AS rn
+            FROM paper_queries pq
+            JOIN queries q ON q.id = pq.query_id
+        ) best ON best.paper_id = papers.id AND best.rn = 1
+        """,
+        "best.relevance_score AS relevance_score, best.summary AS summary, best.query_name AS score_query_name",
+        [],
+    )
+
 
 def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None, unread_only=False):
     """Papers ingested in the last window_days (None = no cutoff), relevance DESC.
@@ -67,52 +126,47 @@ def get_digest_papers(conn=None, window_days=DIGEST_WINDOW_DAYS, query_id=None, 
     would render an empty digest most of the time even with plenty of
     recent papers to show."""
     conn = conn or db.get_connection()
-    sql = "SELECT * FROM papers WHERE 1=1"
-    params = []
+    join_sql, select_cols, params = _score_join(query_id)
+    sql = f"SELECT {_PAPER_COLUMNS}, {select_cols} FROM papers {join_sql} WHERE 1=1"
     if window_days is not None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
-        sql += " AND ingested_at >= ?"
+        sql += " AND papers.ingested_at >= ?"
         params.append(cutoff)
-    if query_id:
-        sql += " AND papers.id IN (SELECT paper_id FROM paper_queries WHERE query_id = ?)"
-        params.append(query_id)
     if unread_only:
-        sql += " AND read_at IS NULL"
-    sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
+        sql += " AND papers.read_at IS NULL"
+    sql += " ORDER BY relevance_score DESC NULLS LAST, papers.published_date DESC"
     return conn.execute(sql, params).fetchall()
 
 
 def search_papers(query="", source="", since="", until="", folder_id=None, query_id=None, conn=None):
     conn = conn or db.get_connection()
+    join_sql, select_cols, params = _score_join(query_id)
 
     if query.strip():
-        sql = """
-            SELECT papers.* FROM papers
+        sql = f"""
+            SELECT {_PAPER_COLUMNS}, {select_cols} FROM papers
             JOIN papers_fts ON papers.rowid = papers_fts.rowid
+            {join_sql}
             WHERE papers_fts MATCH ?
         """
-        params = [query.strip()]
+        params = params + [query.strip()]
     else:
-        sql = "SELECT * FROM papers WHERE 1=1"
-        params = []
+        sql = f"SELECT {_PAPER_COLUMNS}, {select_cols} FROM papers {join_sql} WHERE 1=1"
 
     if source:
-        sql += " AND source = ?"
+        sql += " AND papers.source = ?"
         params.append(source)
     if since:
-        sql += " AND published_date >= ?"
+        sql += " AND papers.published_date >= ?"
         params.append(since)
     if until:
-        sql += " AND published_date <= ?"
+        sql += " AND papers.published_date <= ?"
         params.append(until)
     if folder_id:
         sql += " AND papers.id IN (SELECT paper_id FROM paper_folders WHERE folder_id = ?)"
         params.append(folder_id)
-    if query_id:
-        sql += " AND papers.id IN (SELECT paper_id FROM paper_queries WHERE query_id = ?)"
-        params.append(query_id)
 
-    sql += " ORDER BY relevance_score DESC NULLS LAST, published_date DESC"
+    sql += " ORDER BY relevance_score DESC NULLS LAST, papers.published_date DESC"
 
     return conn.execute(sql, params).fetchall()
 
@@ -271,7 +325,7 @@ def count_queries(conn=None) -> int:
     return conn.execute("SELECT COUNT(*) AS n FROM queries").fetchone()["n"]
 
 
-def create_query(name: str, keywords_raw: str, conn=None):
+def create_query(name: str, keywords_raw: str, scoring_instructions: str | None = None, conn=None):
     """Returns the new row, None if the name is taken, or "max_reached" if
     MAX_QUERIES already exist."""
     conn = conn or db.get_connection()
@@ -279,8 +333,9 @@ def create_query(name: str, keywords_raw: str, conn=None):
         return "max_reached"
     try:
         cur = conn.execute(
-            "INSERT INTO queries (name, keywords_raw, created_at) VALUES (?, ?, datetime('now'))",
-            (name, keywords_raw),
+            "INSERT INTO queries (name, keywords_raw, scoring_instructions, created_at) "
+            "VALUES (?, ?, ?, datetime('now'))",
+            (name, keywords_raw, scoring_instructions),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -288,14 +343,21 @@ def create_query(name: str, keywords_raw: str, conn=None):
     return conn.execute("SELECT * FROM queries WHERE id = ?", (cur.lastrowid,)).fetchone()
 
 
-def update_query(query_id: int, name: str, keywords_raw: str, conn=None):
+def update_query(query_id: int, name: str, keywords_raw: str, scoring_instructions: str | None = None, conn=None):
     """Returns True on success, False if the query doesn't exist, None if the
-    new name is taken by a different query."""
+    new name is taken by a different query. Deliberately doesn't retroactively
+    rescore anything already scored under this query, even though a
+    keywords/scoring_instructions edit can change what "should" happen to
+    existing scores — same trade-off backfill_query_matches already makes for
+    keyword edits, kept consistent, and avoids surprise LLM spend on every
+    save. Run `python -m ingest.backfill_scores <query_id>` manually to
+    refresh (it only rescores NULL links, so first null out the ones you
+    want redone)."""
     conn = conn or db.get_connection()
     try:
         cur = conn.execute(
-            "UPDATE queries SET name = ?, keywords_raw = ? WHERE id = ?",
-            (name, keywords_raw, query_id),
+            "UPDATE queries SET name = ?, keywords_raw = ?, scoring_instructions = ? WHERE id = ?",
+            (name, keywords_raw, scoring_instructions, query_id),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -324,12 +386,17 @@ def associate_papers_with_query(paper_ids: list[str], query_id: int, conn=None) 
 
 
 def backfill_query_matches(query_id: int, keywords: list[str], conn=None) -> int:
-    """Scans every already-ingested paper for a keyword match and associates
-    it with this query immediately, so a newly-created query isn't empty
-    until the next ingestion run. Pure regex match, same function bioRxiv
-    filtering already uses (ingest/keywords.py) — no LLM/API cost, and no
-    re-scoring: a matched paper keeps whichever relevance_score/summary it
-    already has. Returns the number of papers associated."""
+    """Scans every already-ingested paper for a keyword match and links it to
+    this query immediately, so a newly-created query isn't empty until the
+    next ingestion run. Pure regex match, same function bioRxiv filtering
+    already uses (ingest/keywords.py) — no LLM/API cost here, and each new
+    link starts with relevance_score NULL (unscored under this query, even
+    if the paper already has a score under some other query it also
+    matches). The caller (routes.py: create_query) is responsible for
+    kicking off the actual scoring — a background `ingest.backfill_scores`
+    subprocess, same pattern as the "Run now" trigger — since that costs
+    real LLM calls and shouldn't block this request. Returns the number of
+    papers linked."""
     conn = conn or db.get_connection()
     rows = conn.execute("SELECT id, title, abstract FROM papers").fetchall()
     matches = [

@@ -36,9 +36,11 @@ def _get_since_date(conn, query_id) -> "datetime.date":
     """Per-query watermark — a query with no successful runs yet (brand new,
     or never completed) falls through to the initial-backfill window, giving
     each query independent history regardless of how long other queries have
-    been running."""
+    been running. run_type = 'ingest' excludes background rescoring jobs
+    (ingest/backfill_scores.py) — those don't fetch anything and must never
+    be mistaken for "we already fetched up to here"."""
     row = conn.execute(
-        "SELECT finished_at FROM runs WHERE status = 'ok' AND query_id = ? "
+        "SELECT finished_at FROM runs WHERE status = 'ok' AND query_id = ? AND run_type = 'ingest' "
         "ORDER BY finished_at DESC LIMIT 1",
         (query_id,),
     ).fetchone()
@@ -60,35 +62,33 @@ def _dedupe_against_db(conn, papers: list[dict]) -> list[dict]:
     return [p for p in papers if p["id"] not in existing]
 
 
-def _insert_papers(conn, papers: list[dict], scores: dict[str, dict]) -> None:
+def _insert_papers(conn, papers: list[dict]) -> None:
+    """Inserts the bare paper rows only — no score/summary here anymore,
+    those are scoped per-query now (see score_pending_for_query) and get
+    filled in by whichever query(s) actually score this paper."""
+    if not papers:
+        return
     now = _now_iso()
     conn.executemany(
         """
-        INSERT INTO papers (id, source, title, authors, published_date, abstract,
-                             summary, relevance_score, url, ingested_at)
-        VALUES (:id, :source, :title, :authors, :published_date, :abstract,
-                :summary, :relevance_score, :url, :ingested_at)
+        INSERT INTO papers (id, source, title, authors, published_date, abstract, url, ingested_at)
+        VALUES (:id, :source, :title, :authors, :published_date, :abstract, :url, :ingested_at)
         """,
-        [
-            {
-                **p,
-                "summary": scores.get(p["id"], {}).get("summary"),
-                "relevance_score": scores.get(p["id"], {}).get("relevance_score"),
-                "ingested_at": now,
-            }
-            for p in papers
-        ],
+        [{**p, "ingested_at": now} for p in papers],
     )
     conn.commit()
 
 
 def _associate_with_query(conn, paper_ids: list[str], query_id: int) -> None:
     """Links every fetched paper (new or already-existing) to this query, so
-    a paper first ingested for one query is still discoverable under another
-    query whose keywords also match it — without re-scoring it. This is what
-    makes cross-query overlap correct: dedup (_dedupe_against_db) only
-    decides what gets *inserted*/*scored*; this decides what gets *linked*,
-    and runs against the full fetched set regardless of dedup's outcome."""
+    a paper first ingested for one query is still discoverable — and, unlike
+    before per-query scoring, still gets *scored* — under another query
+    whose keywords also match it. This is what makes cross-query overlap
+    correct: dedup (_dedupe_against_db) only decides what gets *inserted*
+    into papers; this decides what gets *linked*, and runs against the full
+    fetched set regardless of dedup's outcome. Newly-linked rows start with
+    relevance_score NULL — score_pending_for_query is what actually scores
+    them, whether that's this same run (below) or a later backfill."""
     if not paper_ids:
         return
     conn.executemany(
@@ -96,6 +96,59 @@ def _associate_with_query(conn, paper_ids: list[str], query_id: int) -> None:
         [(pid, query_id, _now_iso()) for pid in paper_ids],
     )
     conn.commit()
+
+
+def _fetch_pending_for_query(conn, query_id: int) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT papers.id, papers.title, papers.abstract
+        FROM paper_queries
+        JOIN papers ON papers.id = paper_queries.paper_id
+        WHERE paper_queries.query_id = ? AND paper_queries.relevance_score IS NULL
+        """,
+        (query_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def score_pending_for_query(conn, query_id: int) -> tuple[int, float]:
+    """Scores every paper linked to this query that doesn't yet have a
+    relevance_score *under this query* — whether that's a paper this run
+    just inserted, or a pre-existing paper a keyword backfill just linked
+    (see app/queries.py: backfill_query_matches) without scoring it. Shared
+    by the normal per-query ingestion loop (below) and the standalone
+    background backfill job (ingest/backfill_scores.py) so both write scores
+    the exact same way. Returns (papers_scored, cost_usd)."""
+    query = conn.execute(
+        "SELECT keywords_raw, scoring_instructions FROM queries WHERE id = ?", (query_id,)
+    ).fetchone()
+    if query is None:
+        return 0, 0.0
+    keywords = parse_keywords(query["keywords_raw"])
+    pending = _fetch_pending_for_query(conn, query_id)
+    if not pending or not keywords:
+        return 0, 0.0
+
+    scores, cost = score_and_summarize(pending, keywords, query["scoring_instructions"])
+    now = _now_iso()
+    conn.executemany(
+        """
+        UPDATE paper_queries SET relevance_score = :relevance_score, summary = :summary, scored_at = :scored_at
+        WHERE paper_id = :paper_id AND query_id = :query_id
+        """,
+        [
+            {
+                "paper_id": p["id"],
+                "query_id": query_id,
+                "relevance_score": scores[p["id"]]["relevance_score"],
+                "summary": scores[p["id"]]["summary"],
+                "scored_at": now,
+            }
+            for p in pending
+        ],
+    )
+    conn.commit()
+    return len(pending), cost
 
 
 def run() -> int:
@@ -161,13 +214,13 @@ def run() -> int:
                 all_papers = pubmed_papers + biorxiv_papers
                 new_papers = _dedupe_against_db(conn, all_papers)
 
-                scores, cost = score_and_summarize(new_papers, keywords) if new_papers else ({}, 0.0)
-                _insert_papers(conn, new_papers, scores)
+                _insert_papers(conn, new_papers)
                 # Link the *entire* fetched set, not just the new subset — a
                 # paper this query re-discovers (already ingested by an
-                # earlier query) still needs a paper_queries row, even
-                # though it's neither re-inserted nor re-scored.
+                # earlier query) still needs a paper_queries row, so it gets
+                # scored under this query's own criteria below too.
                 _associate_with_query(conn, [p["id"] for p in all_papers], query_id)
+                scored_count, cost = score_pending_for_query(conn, query_id)
 
                 conn.execute(
                     "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ?, cost_usd = ? WHERE id = ?",
@@ -176,7 +229,7 @@ def run() -> int:
                 conn.commit()
 
                 print(
-                    f"[{name}] {len(new_papers)} new papers "
+                    f"[{name}] {len(new_papers)} new papers, {scored_count} scored "
                     f"({len(pubmed_papers)} pubmed matches, {len(biorxiv_papers)} biorxiv matches, "
                     f"since {since_date.isoformat()})."
                 )

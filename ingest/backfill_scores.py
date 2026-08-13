@@ -1,50 +1,86 @@
-"""One-off/maintenance utility: score any papers in the DB that are missing
-relevance_score/summary (e.g. ingested before OPENROUTER_API_KEY was set).
-Run as: python -m ingest.backfill_scores
+"""Maintenance/backfill utility: scores every paper_queries link that's
+missing a relevance_score/summary under its query — new queries' overlap
+with the existing archive (triggered automatically as a background
+subprocess by app/routes.py: create_query, mirroring "Run now"), or, run
+with no argument, every query at once as a general catch-up sweep (e.g.
+after editing a query's scoring_instructions and wanting existing scores
+refreshed, or recovering from a run that errored before scoring finished).
+
+Logs to `runs` as run_type = 'backfill' so cost is still visible in the
+Settings run log, but ingest/ingest.py's "since when do we fetch" watermark
+(run_type = 'ingest') never sees these rows — a backfill fetches nothing.
+
+Run as: python -m ingest.backfill_scores [query_id]
 """
 import sys
+from datetime import datetime, timezone
 
 import db
-from ingest.keywords import parse_keywords
-from ingest.scoring import score_and_summarize
+from ingest.ingest import score_pending_for_query
 
 
-def run() -> int:
-    conn = db.get_connection()
-    # Union of every query's keywords (deduped) — settings.keywords is
-    # deprecated/frozen now that queries supersede the single global list.
-    query_rows = conn.execute("SELECT keywords_raw FROM queries").fetchall()
-    seen = set()
-    keywords = []
-    for row in query_rows:
-        for kw in parse_keywords(row["keywords_raw"]):
-            if kw.lower() not in seen:
-                seen.add(kw.lower())
-                keywords.append(kw)
-    if not keywords:
-        print("No queries configured — nothing to score against.")
-        return 0
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-    rows = conn.execute(
-        "SELECT id, title, abstract FROM papers WHERE relevance_score IS NULL"
-    ).fetchall()
-    papers = [dict(r) for r in rows]
 
-    if not papers:
-        print("No papers need backfilling.")
-        return 0
-
-    results = score_and_summarize(papers, keywords)
-    conn.executemany(
-        "UPDATE papers SET relevance_score = :relevance_score, summary = :summary WHERE id = :id",
-        [{"id": p["id"], **results[p["id"]]} for p in papers],
-    )
+def _score_one_query(conn, query_id: int) -> tuple[int, float]:
+    run_id = conn.execute(
+        "INSERT INTO runs (started_at, status, query_id, run_type) VALUES (?, 'running', ?, 'backfill')",
+        (_now_iso(), query_id),
+    ).lastrowid
     conn.commit()
+    try:
+        scored, cost = score_pending_for_query(conn, query_id)
+        conn.execute(
+            "UPDATE runs SET finished_at = ?, status = 'ok', new_papers_count = ?, cost_usd = ? WHERE id = ?",
+            (_now_iso(), scored, cost, run_id),
+        )
+        conn.commit()
+        return scored, cost
+    except Exception as exc:
+        conn.rollback()
+        conn.execute(
+            "UPDATE runs SET finished_at = ?, status = 'error', error_message = ? WHERE id = ?",
+            (_now_iso(), str(exc), run_id),
+        )
+        conn.commit()
+        raise
 
-    scored = sum(1 for r in results.values() if r["relevance_score"] is not None)
-    print(f"Backfilled {scored}/{len(papers)} papers.")
-    return 0
+
+def run(query_id: int | None = None) -> int:
+    conn = db.get_connection()
+    try:
+        if query_id is not None:
+            query_ids = [query_id]
+        else:
+            query_ids = [row["id"] for row in conn.execute("SELECT id FROM queries ORDER BY id")]
+
+        if not query_ids:
+            print("No queries configured — nothing to score.")
+            return 0
+
+        total_scored, total_cost, any_failed = 0, 0.0, False
+        for qid in query_ids:
+            try:
+                scored, cost = _score_one_query(conn, qid)
+            except Exception as exc:
+                any_failed = True
+                print(f"[query {qid}] backfill failed: {exc}", file=sys.stderr)
+                continue
+            total_scored += scored
+            total_cost += cost
+            if scored:
+                print(f"[query {qid}] scored {scored} papers (${cost:.4f}).")
+
+        print(
+            f"Done — {total_scored} papers scored across "
+            f"{len(query_ids)} quer{'y' if len(query_ids) == 1 else 'ies'} (${total_cost:.4f})."
+        )
+        return 1 if any_failed else 0
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    sys.exit(run(int(arg) if arg else None))

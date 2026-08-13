@@ -13,12 +13,23 @@ MAX_ATTEMPTS = 2
 FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 
-def _system_prompt(keywords: list[str]) -> str:
+def _system_prompt(keywords: list[str], scoring_instructions: str | None = None) -> str:
     keyword_list = ", ".join(keywords)
-    return (
+    prompt = (
         "You will be given a JSON array of paper abstracts, each as "
         '{"id": ..., "abstract": ...}. For each paper, evaluate its relevance '
         f"to these research interest keywords: {keyword_list}.\n\n"
+    )
+    if scoring_instructions and scoring_instructions.strip():
+        # User-authored, appended verbatim rather than merged into the
+        # keyword sentence above — keeps "what to fetch" (keywords) and "how
+        # to weigh it" (this) visibly separate to the model, matching how
+        # they're kept separate in the Queries UI.
+        prompt += (
+            "Additional scoring guidance from the user — weight this heavily "
+            f"when assigning relevance_score:\n{scoring_instructions.strip()}\n\n"
+        )
+    prompt += (
         "Return, for every input id:\n"
         "- relevance_score: a number 0-10 (10 = highly relevant, 0 = unrelated)\n"
         "- summary: a 2-3 sentence plain-language summary of the paper aimed at "
@@ -26,6 +37,7 @@ def _system_prompt(keywords: list[str]) -> str:
         "Respond ONLY with a JSON array, no markdown fences, no other text:\n"
         '[{"id": "...", "relevance_score": <number>, "summary": "..."}, ...]'
     )
+    return prompt
 
 
 def _parse_response_content(content: str) -> dict[str, dict]:
@@ -54,7 +66,9 @@ def _parse_response_content(content: str) -> dict[str, dict]:
     return result
 
 
-def _call_openrouter(batch: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
+def _call_openrouter(
+    batch: list[dict], keywords: list[str], scoring_instructions: str | None = None
+) -> tuple[dict[str, dict], float]:
     # Note: OpenRouter/deepseek's `response_format: json_object` mode forces
     # a top-level JSON *object*, incompatible with the top-level array this
     # prompt asks for — deliberately not used here. Plain prompting + a
@@ -67,7 +81,7 @@ def _call_openrouter(batch: list[dict], keywords: list[str]) -> tuple[dict[str, 
     payload = {
         "model": config.OPENROUTER_MODEL,
         "messages": [
-            {"role": "system", "content": _system_prompt(keywords)},
+            {"role": "system", "content": _system_prompt(keywords, scoring_instructions)},
             {"role": "user", "content": user_content},
         ],
         "max_tokens": 4000,
@@ -95,26 +109,32 @@ def _call_openrouter(batch: list[dict], keywords: list[str]) -> tuple[dict[str, 
     return _parse_response_content(content), cost
 
 
-def _score_batch(batch: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
+def _score_batch(
+    batch: list[dict], keywords: list[str], scoring_instructions: str | None = None
+) -> tuple[dict[str, dict], float]:
     for _ in range(MAX_ATTEMPTS):
         try:
-            return _call_openrouter(batch, keywords)
+            return _call_openrouter(batch, keywords, scoring_instructions)
         except Exception:
             continue
     return {}, 0.0
 
 
-def score_and_summarize(papers: list[dict], keywords: list[str]) -> tuple[dict[str, dict], float]:
+def score_and_summarize(
+    papers: list[dict], keywords: list[str], scoring_instructions: str | None = None
+) -> tuple[dict[str, dict], float]:
     """Returns ({paper_id: {"relevance_score": float|None, "summary": str|None}}, total_cost_usd).
     Papers the model fails to score (batch error, or the model omitted an id)
     still get an entry with None values so ingestion writes the row rather
-    than dropping the paper."""
+    than dropping the paper. scoring_instructions is optional free-text
+    guidance from a query's Queries-page config, appended to the prompt on
+    top of the keyword list (see _system_prompt)."""
     results: dict[str, dict] = {}
     total_cost = 0.0
 
     for i in range(0, len(papers), BATCH_SIZE):
         batch = papers[i:i + BATCH_SIZE]
-        batch_results, batch_cost = _score_batch(batch, keywords)
+        batch_results, batch_cost = _score_batch(batch, keywords, scoring_instructions)
         total_cost += batch_cost
         for paper in batch:
             results[paper["id"]] = batch_results.get(

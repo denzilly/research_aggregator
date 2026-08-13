@@ -236,14 +236,19 @@ def queries_page():
     return _render_queries_page(get_db())
 
 
+def _scoring_instructions_from_form():
+    return request.form.get("scoring_instructions", "").strip() or None
+
+
 @bp.route("/queries", methods=["POST"])
 def create_query():
     conn = get_db()
     name = request.form.get("name", "").strip()
     keywords_raw = request.form.get("keywords", "")
+    scoring_instructions = _scoring_instructions_from_form()
     if not name or not parse_keywords(keywords_raw):
         abort(400)
-    query = queries.create_query(name, keywords_raw, conn)
+    query = queries.create_query(name, keywords_raw, scoring_instructions, conn)
     if query == "max_reached":
         return _render_queries_page(
             conn, status=409,
@@ -252,6 +257,14 @@ def create_query():
     if query is None:
         return _render_queries_page(conn, status=409, error="A query with that name already exists.")
     backfilled = queries.backfill_query_matches(query["id"], parse_keywords(keywords_raw), conn)
+    if backfilled:
+        # Links are in (relevance_score NULL) but not yet scored — that
+        # costs real LLM calls, so it happens in the background rather than
+        # blocking this request, same pattern as "Run now" in Settings.
+        subprocess.Popen(
+            [sys.executable, "-m", "ingest.backfill_scores", str(query["id"])],
+            cwd=str(config.BASE_DIR),
+        )
     return _render_queries_page(conn, created=query["name"], backfilled=backfilled)
 
 
@@ -260,9 +273,10 @@ def update_query(query_id):
     conn = get_db()
     name = request.form.get("name", "").strip()
     keywords_raw = request.form.get("keywords", "")
+    scoring_instructions = _scoring_instructions_from_form()
     if not name or not parse_keywords(keywords_raw):
         abort(400)
-    result = queries.update_query(query_id, name, keywords_raw, conn)
+    result = queries.update_query(query_id, name, keywords_raw, scoring_instructions, conn)
     if result is False:
         abort(404)
     if result is None:

@@ -45,12 +45,20 @@
         </div>
         {% for run in runs %}
         <div class="run-log-row">
-          <span>{{ run.query_name or "Deleted query" }}</span>
+          <span>
+            {{ run.query_name or "Deleted query" }}
+            {% if run.run_type == "backfill" %}<span class="run-log-tag">backfill</span>{% endif %}
+          </span>
           <span>{{ (run.finished_at or run.started_at)[:16] | replace("T", " ") }}</span>
           <span class="run-log-status run-log-status-{{ run.status }}">
             <span class="dot"></span>{{ "Failed" if run.status == "error" else "OK" }}
           </span>
-          <span>{{ run.new_papers_count if run.new_papers_count is not none else "—" }}</span>
+          <span>
+            {% if run.new_papers_count is none %}—
+            {% elif run.run_type == "backfill" %}{{ run.new_papers_count }} scored
+            {% else %}{{ run.new_papers_count }}
+            {% endif %}
+          </span>
           <span>{{ "$%.4f"|format(run.cost_usd) if run.cost_usd is not none else "—" }}</span>
         </div>
         {% if run.status == "error" and run.error_message %}

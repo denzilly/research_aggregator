@@ -694,6 +694,13 @@ a.btn { display: inline-block; text-decoration: none; }
   white-space: nowrap;
 }
 
+.score-query-label {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--on-surface-faint);
+  white-space: nowrap;
+}
+
 .paper-meta {
   font-size: 11px;
   color: var(--on-surface-variant);
@@ -925,6 +932,17 @@ a.btn { display: inline-block; text-decoration: none; }
   background: var(--surface-panel);
   position: sticky;
   top: 0;
+}
+.run-log-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--on-surface-faint);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  margin-left: 4px;
 }
 .run-log-status { display: flex; align-items: center; gap: 5px; }
 .run-log-status .dot { width: 6px; height: 6px; border-radius: var(--radius-full); flex-shrink: 0; }

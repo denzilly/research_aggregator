@@ -20,6 +20,12 @@
         </div>
         <label for="keywords-{{ q.id }}" class="hint">Keywords &mdash; comma-separated. Used to build the PubMed query and to keyword-filter bioRxiv/medRxiv preprints.</label>
         <textarea id="keywords-{{ q.id }}" name="keywords">{{ q.keywords_raw }}</textarea>
+        <label for="scoring-{{ q.id }}" class="hint" style="margin-top: 10px;">
+          Scoring guidance &mdash; optional. Free text appended to the relevance-scoring prompt, e.g. "Please focus on
+          the biofilm keyword and ensure that contributes most to score." Doesn't affect what gets fetched, only how
+          it's scored — and doesn't retroactively rescore papers already scored under this query.
+        </label>
+        <textarea id="scoring-{{ q.id }}" name="scoring_instructions" placeholder="No special guidance — score purely on the keywords above.">{{ q.scoring_instructions or "" }}</textarea>
         <div class="query-card-actions">
           <button type="submit">Save Changes</button>
           {% if saved == q.id %}<span class="flash">Saved.</span>{% endif %}
@@ -41,11 +47,21 @@
         <label for="new-name">Name</label>
         <input type="text" id="new-name" name="name" placeholder="e.g. Phage therapy">
       </div>
-      <label for="new-keywords" class="hint">Comma-separated. New queries immediately backfill from the existing archive, then keep fetching going forward.</label>
+      <label for="new-keywords" class="hint">Comma-separated. New queries immediately link matches from the existing archive, then keep fetching going forward.</label>
       <textarea id="new-keywords" name="keywords" placeholder="phage therapy, clinical trial"></textarea>
+      <label for="new-scoring" class="hint" style="margin-top: 10px;">
+        Scoring guidance &mdash; optional. Free text appended to the relevance-scoring prompt, e.g. "Please focus on
+        the biofilm keyword and ensure that contributes most to score."
+      </label>
+      <textarea id="new-scoring" name="scoring_instructions" placeholder="No special guidance — score purely on the keywords above."></textarea>
       <div class="query-card-actions">
         <button type="submit">Create query</button>
-        {% if created %}<span class="flash">Created "{{ created }}" — matched {{ backfilled }} existing paper{{ "" if backfilled == 1 else "s" }}.</span>{% endif %}
+        {% if created %}
+          <span class="flash">
+            Created "{{ created }}" — matched {{ backfilled }} existing paper{{ "" if backfilled == 1 else "s" }}
+            {% if backfilled %}(scoring them now in the background — refresh in a moment){% endif %}.
+          </span>
+        {% endif %}
       </div>
     </form>
   </div>
